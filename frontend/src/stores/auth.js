@@ -11,7 +11,9 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isLoggedIn: (s) => !!s.token,
-    isAdmin: (s) => s.user?.role === 'ADMIN'
+    isAdmin: (s) => s.user?.role === 'ADMIN',
+    // 超级管理员或内容管理员：可进入管理后台，tab 按角色细分
+    isAdminLike: (s) => s.user?.role === 'ADMIN' || s.user?.role === 'CONTENT_ADMIN'
   },
   actions: {
     async login(payload) {

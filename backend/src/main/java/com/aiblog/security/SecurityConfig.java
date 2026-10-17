@@ -48,8 +48,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 注册、登录公开
-                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        // 注册、登录、登录验证码公开
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/captcha").permitAll()
                         // “我的文章”必须登录（声明在通配符之前）
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/articles/mine")
                         .authenticated()

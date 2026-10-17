@@ -26,7 +26,7 @@
                        :class="{ active: activeMenu === '/my' }">
             我的文章
           </router-link>
-          <router-link v-if="auth.isAdmin" to="/admin" class="nav-item"
+          <router-link v-if="auth.isAdminLike" to="/admin" class="nav-item"
                        :class="{ active: activeMenu === '/admin' }">
             管理后台
           </router-link>
@@ -46,7 +46,7 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="profile">个人中心</el-dropdown-item>
                   <el-dropdown-item command="my">我的文章</el-dropdown-item>
-                  <el-dropdown-item v-if="auth.isAdmin" command="admin">管理后台</el-dropdown-item>
+                  <el-dropdown-item v-if="auth.isAdminLike" command="admin">管理后台</el-dropdown-item>
                   <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
                 </el-dropdown-menu>
               </template>

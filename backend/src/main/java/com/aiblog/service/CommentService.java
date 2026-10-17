@@ -2,6 +2,7 @@ package com.aiblog.service;
 
 import com.aiblog.common.BusinessException;
 import com.aiblog.common.ErrorCode;
+import com.aiblog.dto.admin.AdminCommentItem;
 import com.aiblog.dto.comment.CommentItem;
 import com.aiblog.entity.Article;
 import com.aiblog.entity.Comment;
@@ -11,8 +12,11 @@ import com.aiblog.mapper.CommentMapper;
 import com.aiblog.mapper.UserMapper;
 import com.aiblog.security.CurrentUser;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +24,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CommentService {
@@ -71,6 +76,43 @@ public class CommentService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅评论作者或管理员可删除");
         }
         commentMapper.deleteById(id);
+    }
+
+    /** 管理端全站评论分页，支持关键词（命中评论内容） */
+    public Map<String, Object> adminPage(int page, int size, String keyword) {
+        Page<Comment> result = commentMapper.selectPage(Page.of(page, Math.min(size, 50)),
+                Wrappers.<Comment>lambdaQuery()
+                        .like(StringUtils.hasText(keyword), Comment::getContent, keyword)
+                        .orderByDesc(Comment::getCreatedAt));
+        List<Comment> records = result.getRecords();
+        Map<Long, User> authors = records.isEmpty() ? Map.of()
+                : userMapper.selectBatchIds(records.stream().map(Comment::getAuthorId)
+                        .collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        Map<Long, Article> articles = records.isEmpty() ? Map.of()
+                : articleMapper.selectBatchIds(records.stream().map(Comment::getArticleId)
+                        .collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(Article::getId, Function.identity()));
+        List<AdminCommentItem> items = records.stream()
+                .map(c -> AdminCommentItem.of(c,
+                        authors.get(c.getAuthorId()),
+                        articles.get(c.getArticleId())))
+                .toList();
+        return Map.of("total", result.getTotal(), "items", items);
+    }
+
+    /** 管理端批量删除评论（逻辑删除），返回实际删除条数 */
+    public int adminBatchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "ids 不能为空");
+        }
+        List<Comment> comments = commentMapper.selectBatchIds(ids);
+        if (comments.isEmpty()) {
+            return 0;
+        }
+        int n = commentMapper.deleteBatchIds(comments.stream().map(Comment::getId).toList());
+        log.info("管理端批量删除评论: count={}", n);
+        return n;
     }
 
     /**

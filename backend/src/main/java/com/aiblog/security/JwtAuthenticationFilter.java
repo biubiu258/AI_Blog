@@ -40,7 +40,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Long uid = claims.get("uid", Long.class);
                 if (uid != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                     User user = userMapper.selectById(uid);
-                    if (user != null && user.getStatus() != null && user.getStatus() == 0) {
+                    if (user != null && !user.isBanActive()) {
+                        if (user.getStatus() != null && user.getStatus() == 1) {
+                            // 封禁期限已过：惰性解封，回正状态
+                            user.setStatus(0);
+                            user.setBanReason(null);
+                            user.setBannedUntil(null);
+                            userMapper.updateById(user);
+                        }
                         UserDetails principal = new LoginUser(user.getId(), user.getUsername(),
                                 user.getPasswordHash(), user.getRole(), user.getStatus());
                         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(

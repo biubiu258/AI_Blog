@@ -32,6 +32,11 @@ public class LoginUser implements UserDetails {
         return "ADMIN".equals(role);
     }
 
+    /** 内容管理员或超级管理员：可进入内容管理类接口 */
+    public boolean isContentAdmin() {
+        return "ADMIN".equals(role) || "CONTENT_ADMIN".equals(role);
+    }
+
     public boolean isBanned() {
         return status != null && status == 1;
     }

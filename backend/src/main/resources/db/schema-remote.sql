@@ -15,8 +15,10 @@ CREATE TABLE IF NOT EXISTS `user` (
     `nickname`      VARCHAR(64)  NULL COMMENT '展示昵称',
     `avatar_url`    VARCHAR(255) NULL COMMENT '头像地址',
     `bio`           VARCHAR(500) NULL COMMENT '简介',
-    `role`          VARCHAR(16)  NOT NULL DEFAULT 'USER' COMMENT 'USER / ADMIN',
+    `role`          VARCHAR(16)  NOT NULL DEFAULT 'USER' COMMENT 'USER / ADMIN / CONTENT_ADMIN',
     `status`        TINYINT      NOT NULL DEFAULT 0 COMMENT '0 正常 / 1 封禁',
+    `ban_reason`    VARCHAR(255) NULL COMMENT '封禁原因',
+    `banned_until`  DATETIME     NULL COMMENT '封禁截止时间，NULL=永久',
     `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -89,3 +91,16 @@ CREATE TABLE IF NOT EXISTS `upload_file` (
     PRIMARY KEY (`id`),
     KEY `idx_upload_owner` (`owner_id`)
 ) ENGINE = InnoDB COMMENT '上传文件';
+
+-- 管理员操作审计日志
+CREATE TABLE IF NOT EXISTS `admin_log` (
+    `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `admin_id`       BIGINT       NOT NULL COMMENT '操作管理员',
+    `admin_username` VARCHAR(64)  NOT NULL COMMENT '操作管理员用户名',
+    `action`         VARCHAR(50)  NOT NULL COMMENT '动作：BAN/UNBAN/SET_ROLE/ARTICLE_UNPUBLISH/ARTICLE_DELETE/COMMENT_DELETE',
+    `target`         VARCHAR(255) NOT NULL COMMENT '目标摘要，如 user:5 / article:1,2,3',
+    `detail`         VARCHAR(1000) NULL COMMENT '详情 JSON',
+    `created_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_admin_log_admin` (`admin_id`, `created_at`)
+) ENGINE = InnoDB COMMENT '管理员操作审计日志';

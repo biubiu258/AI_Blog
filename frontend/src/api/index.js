@@ -3,7 +3,8 @@ import request from './request'
 export const authApi = {
   register: (data) => request.post('/auth/register', data),
   login: (data) => request.post('/auth/login', data),
-  logout: () => request.post('/auth/logout')
+  logout: () => request.post('/auth/logout'),
+  captcha: () => request.get('/auth/captcha')
 }
 
 export const userApi = {
@@ -44,5 +45,15 @@ export const fileApi = {
 
 export const adminApi = {
   listUsers: (params) => request.get('/admin/users', { params }),
-  setUserStatus: (id, status) => request.put(`/admin/users/${id}/status`, { status })
+  setUserStatus: (id, data) => request.put(`/admin/users/${id}/status`, data),
+  setUserRole: (id, role) => request.put(`/admin/users/${id}/role`, { role }),
+  listArticles: (params) => request.get('/admin/articles', { params }),
+  batchUnpublishArticles: (ids) =>
+    request.put('/admin/articles/batch-status', { ids, status: 'draft' }),
+  batchDeleteArticles: (ids) =>
+    request.delete('/admin/articles/batch', { params: { ids: ids.join(',') } }),
+  listComments: (params) => request.get('/admin/comments', { params }),
+  batchDeleteComments: (ids) =>
+    request.delete('/admin/comments/batch', { params: { ids: ids.join(',') } }),
+  listLogs: (params) => request.get('/admin/logs', { params })
 }

@@ -27,6 +27,14 @@
           <el-input v-model="form.password" type="password" show-password placeholder="请输入密码"
                     @keyup.enter="submit" />
         </el-form-item>
+        <el-form-item label="验证码" prop="captchaCode">
+          <div class="captcha-row">
+            <el-input v-model="form.captchaCode" placeholder="输入右侧字符" maxlength="4"
+                      @keyup.enter="submit" />
+            <img v-if="captcha.image" :src="captcha.image" class="captcha-img"
+                 title="看不清？点击刷新" alt="验证码" @click="loadCaptcha" />
+          </div>
+        </el-form-item>
         <el-button type="primary" size="large" class="auth-btn" :loading="loading" @click="submit">
           登 录
         </el-button>
@@ -40,10 +48,11 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { authApi } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,23 +60,42 @@ const auth = useAuthStore()
 
 const formRef = ref()
 const loading = ref(false)
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '', password: '', captchaCode: '' })
+const captcha = reactive({ captchaId: '', image: '' })
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  captchaCode: [{ required: true, message: '请输入验证码', trigger: 'blur' }]
+}
+
+async function loadCaptcha() {
+  const data = await authApi.captcha()
+  captcha.captchaId = data.captchaId
+  captcha.image = data.image
+  form.captchaCode = ''
 }
 
 async function submit() {
   await formRef.value.validate()
   loading.value = true
   try {
-    await auth.login({ ...form })
+    await auth.login({
+      username: form.username,
+      password: form.password,
+      captchaId: captcha.captchaId,
+      captchaCode: form.captchaCode
+    })
     ElMessage.success('登录成功')
     router.push(route.query.redirect || '/')
+  } catch {
+    // 验证码一次性：无论失败原因，刷新以备重试
+    loadCaptcha()
   } finally {
     loading.value = false
   }
 }
+
+onMounted(loadCaptcha)
 </script>
 
 <style scoped>
@@ -202,6 +230,22 @@ async function submit() {
 .auth-btn {
   width: 100%;
   letter-spacing: 0.4em;
+}
+
+.captcha-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+.captcha-row .el-input {
+  flex: 1;
+}
+.captcha-img {
+  height: 32px;
+  border: 1px solid var(--hairline-dark);
+  border-radius: 2px;
+  cursor: pointer;
+  background: var(--paper-deep);
 }
 
 .auth-footer {

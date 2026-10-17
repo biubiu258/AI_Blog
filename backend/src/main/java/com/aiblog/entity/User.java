@@ -26,13 +26,28 @@ public class User {
 
     private String bio;
 
-    /** USER / ADMIN */
+    /** USER / ADMIN / CONTENT_ADMIN */
     private String role;
 
     /** 0 正常 / 1 封禁 */
     private Integer status;
 
+    /** 封禁原因（封禁期间有值） */
+    private String banReason;
+
+    /** 封禁截止时间，NULL 表示永久 */
+    private LocalDateTime bannedUntil;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    /**
+     * 封禁是否仍生效：status=1 且（无期限或未到期）。
+     * 已到期但未回正的记录由调用方惰性解封（回写 status=0）。
+     */
+    public boolean isBanActive() {
+        return status != null && status == 1
+                && (bannedUntil == null || bannedUntil.isAfter(LocalDateTime.now()));
+    }
 }

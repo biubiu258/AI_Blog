@@ -17,6 +17,8 @@ public class AdminUserItem {
     private String email;
     private String role;
     private Integer status;
+    private String banReason;
+    private LocalDateTime bannedUntil;
     private LocalDateTime createdAt;
 
     public static AdminUserItem from(User user) {
@@ -27,6 +29,8 @@ public class AdminUserItem {
         item.setEmail(user.getEmail());
         item.setRole(user.getRole());
         item.setStatus(user.getStatus());
+        item.setBanReason(user.getBanReason());
+        item.setBannedUntil(user.getBannedUntil());
         item.setCreatedAt(user.getCreatedAt());
         return item;
     }

@@ -13,6 +13,7 @@ public enum ErrorCode {
     FORBIDDEN(1003, 403, "无权限"),
     NOT_FOUND(1004, 404, "资源不存在"),
     CONFLICT(1005, 409, "资源冲突"),
+    TOO_MANY_ATTEMPTS(1006, 429, "尝试次数过多，请稍后再试"),
     AI_TIMEOUT(2001, 504, "AI 生成超时"),
     AI_SERVICE_ERROR(2002, 502, "AI 服务异常"),
     AI_EMPTY_OUTPUT(2003, 422, "生成结果为空"),

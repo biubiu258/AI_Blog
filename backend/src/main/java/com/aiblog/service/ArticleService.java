@@ -148,6 +148,52 @@ public class ArticleService {
         vectorSyncService.delete(id);
     }
 
+    /** 管理端全站文章分页（含草稿），支持状态与关键词筛选 */
+    public ArticlePageResponse adminPage(int page, int size, String status, String keyword) {
+        return doPage(Wrappers.<Article>lambdaQuery()
+                        .eq(StringUtils.hasText(status), Article::getStatus, status)
+                        .and(StringUtils.hasText(keyword), w -> w
+                                .like(Article::getTitle, keyword)
+                                .or().like(Article::getContentHtml, keyword))
+                        .orderByDesc(Article::getUpdatedAt),
+                page, size);
+    }
+
+    /** 管理端批量下架（published -> draft），返回实际处理条数；草稿跳过 */
+    public int adminBatchUnpublish(List<Long> ids) {
+        requireIds(ids);
+        List<Article> articles = articleMapper.selectBatchIds(ids);
+        List<Article> published = articles.stream()
+                .filter(a -> "published".equals(a.getStatus()))
+                .toList();
+        for (Article a : published) {
+            a.setStatus("draft");
+            articleMapper.updateById(a);
+            vectorSyncService.delete(a.getId());
+        }
+        log.info("管理端批量下架: count={}", published.size());
+        return published.size();
+    }
+
+    /** 管理端批量删除（逻辑删除），返回实际删除条数 */
+    public int adminBatchDelete(List<Long> ids) {
+        requireIds(ids);
+        List<Article> articles = articleMapper.selectBatchIds(ids);
+        if (articles.isEmpty()) {
+            return 0;
+        }
+        int n = articleMapper.deleteBatchIds(articles.stream().map(Article::getId).toList());
+        articles.forEach(a -> vectorSyncService.delete(a.getId()));
+        log.info("管理端批量删除文章: count={}", n);
+        return n;
+    }
+
+    private void requireIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "ids 不能为空");
+        }
+    }
+
     private void applyRequest(Article article, ArticleSaveRequest request) {
         article.setTitle(request.getTitle());
         article.setCategoryId(request.getCategoryId());
