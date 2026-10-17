@@ -1,0 +1,61 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-blog-backend
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:aiblog}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# JWT 配置：生产环境必须通过环境变量覆盖密钥
+jwt:
+  secret: ${JWT_SECRET:aiblog-dev-secret-key-change-me-in-production-0123456789}
+  expire-hours: ${JWT_EXPIRE_HOURS:72}
+
+# 文件上传：图片落盘到本地目录，/uploads/** 对外提供访问
+upload:
+  dir: ${UPLOAD_DIR:./uploads}
+  max-size-bytes: 5242880
+  allowed-extensions: jpg,jpeg,png,gif,webp
+
+# Python AI 服务（/v1 前缀，共享密钥见接口契约 5.3）
+ai:
+  base-url: ${AI_BASE_URL:http://localhost:8000}
+  internal-token: ${AI_INTERNAL_TOKEN:dev-internal-token}
+  # Java 对外可访问地址：散文任务用它把 /uploads/** 拼成 Python 可直接下载的绝对 URL
+  public-base-url: ${AI_PUBLIC_BASE_URL:http://localhost:8080}
+  # P1 向量同步开关：发布/更新/删除文章后异步通知 Python（失败仅记日志）
+  vector-sync-enabled: ${AI_VECTOR_SYNC_ENABLED:false}
+  connect-timeout-ms: 3000
+  read-timeout-ms: 120000
+  # Java 侧建立到 Python 的连接的最长等待（> 连接超时 3s）
+  pre-stream-wait-seconds: 5
+  sse-timeout-ms: 120000
+
+logging:
+  level:
+    com.aiblog: info

@@ -1,0 +1,95 @@
+package com.aiblog.security;
+
+import com.aiblog.common.ApiResponse;
+import com.aiblog.common.ErrorCode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+@RequiredArgsConstructor
+public class SecurityConfig {
+
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ObjectMapper objectMapper;
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    /**
+     * 无状态 JWT 安全链：公开接口白名单放行，其余一律需要认证。
+     */
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        // 注册、登录公开
+                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        // “我的文章”必须登录（声明在通配符之前）
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/articles/mine")
+                        .authenticated()
+                        // 公开读接口：文章列表/详情、分类列表、文章评论
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,
+                                "/api/articles", "/api/articles/*", "/api/articles/*/comments",
+                                "/api/categories").permitAll()
+                        // 静态资源：上传的图片
+                        .requestMatchers("/uploads/**", "/error").permitAll()
+                        // 其余接口一律认证（含 /api/articles/mine、AI 网关、上传等）
+                        .anyRequest().authenticated())
+                .exceptionHandling(eh -> eh
+                        .authenticationEntryPoint((req, res, ex) ->
+                                writeJson(res, HttpStatus.UNAUTHORIZED, ApiResponse.error(ErrorCode.UNAUTHORIZED)))
+                        .accessDeniedHandler((req, res, ex) ->
+                                writeJson(res, HttpStatus.FORBIDDEN, ApiResponse.error(ErrorCode.FORBIDDEN))))
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
+    /**
+     * 开发环境跨域；生产由 Nginx 同源部署，无需 CORS。
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
+    private void writeJson(HttpServletResponse response, HttpStatus status, ApiResponse<?> body)
+            throws java.io.IOException {
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write(objectMapper.writeValueAsString(body));
+    }
+}

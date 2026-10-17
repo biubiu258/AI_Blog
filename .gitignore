@@ -1,0 +1,23 @@
+# 按要求不上传
+docs/
+start.ps1
+stop.ps1
+
+# IDE
+.idea/
+
+# 运行日志
+*.log
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 后端构建产物与运行时上传文件
+backend/target/
+backend/uploads/
+
+# Python
+AI_Service/.venv/
+__pycache__/
+*.pyc

@@ -1,0 +1,435 @@
+/* ============================================================
+   设计系统 · 文人杂志风
+   纸：宣纸底色与纹理 / 墨：正文层级 / 朱砂：唯一强调色
+   ============================================================ */
+
+:root {
+  /* 纸 */
+  --paper: #f5f1e6;
+  --paper-deep: #ece6d5;
+  --paper-card: #fdfbf4;
+  /* 墨 */
+  --ink: #26241e;
+  --ink-soft: #565246;
+  --ink-faint: #948d7c;
+  /* 朱砂 */
+  --cinnabar: #b03a26;
+  --cinnabar-deep: #8c2a1a;
+  --cinnabar-wash: #f3e4df;
+  /* 界 */
+  --hairline: #ddd4bf;
+  --hairline-dark: #c9bfa4;
+  /* 字 */
+  --font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong',
+    'SimSun', serif;
+
+  /* ---------- Element Plus 主题变量覆盖 ---------- */
+  --el-font-family: var(--font-serif);
+  --el-color-primary: var(--cinnabar);
+  --el-color-primary-light-3: #c4634f;
+  --el-color-primary-light-5: #d48c7b;
+  --el-color-primary-light-7: #e4b5a9;
+  --el-color-primary-light-8: #eccac1;
+  --el-color-primary-light-9: var(--cinnabar-wash);
+  --el-color-primary-dark-2: var(--cinnabar-deep);
+  --el-color-success: #5d7048;
+  --el-color-warning: #b57a22;
+  --el-color-danger: #a33b2e;
+  --el-color-error: #a33b2e;
+  --el-color-info: #8a8474;
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink-soft);
+  --el-text-color-secondary: var(--ink-faint);
+  --el-text-color-placeholder: #ada695;
+  --el-border-color: var(--hairline-dark);
+  --el-border-color-light: var(--hairline);
+  --el-border-color-lighter: #e6dfcd;
+  --el-border-color-extra-light: #eee9d9;
+  --el-fill-color: var(--paper-deep);
+  --el-fill-color-light: #f0ebdd;
+  --el-fill-color-lighter: #f4f0e4;
+  --el-bg-color: var(--paper-card);
+  --el-bg-color-page: var(--paper);
+  --el-border-radius-base: 2px;
+  --el-border-radius-small: 2px;
+  --el-border-radius-round: 999px;
+  --el-box-shadow: 0 2px 10px rgba(60, 50, 30, 0.08);
+  --el-box-shadow-light: 0 1px 6px rgba(60, 50, 30, 0.07);
+  --el-box-shadow-lighter: 0 1px 4px rgba(60, 50, 30, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* 宣纸纹理：极淡噪点 + 顶部暖光 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, #f7f4ea 0%, #f5f1e6 30%, #f2eddf 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(176, 58, 38, 0.18);
+  color: var(--ink);
+}
+
+/* 细 scrollbar，贴近纸感 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-dark);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 通用布局 ---------- */
+
+.page-container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 20px 64px;
+  animation: page-in 0.45s cubic-bezier(0.22, 0.8, 0.32, 1) both;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 杂志式页眉块：各页面可复用 */
+.page-head {
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 26px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.page-head .page-title {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+.page-head .page-sub {
+  color: var(--ink-faint);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  padding-bottom: 4px;
+}
+
+/* ---------- Element Plus 组件级去"Element 脸" ---------- */
+
+/* 按钮：直角、衬线、字距 */
+.el-button {
+  font-family: var(--font-serif);
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  border-radius: 2px;
+  transition: all 0.22s ease;
+}
+.el-button--primary {
+  --el-button-bg-color: var(--cinnabar);
+  --el-button-border-color: var(--cinnabar);
+  --el-button-hover-bg-color: var(--cinnabar-deep);
+  --el-button-hover-border-color: var(--cinnabar-deep);
+  --el-button-active-bg-color: var(--cinnabar-deep);
+  --el-button-active-border-color: var(--cinnabar-deep);
+}
+.el-button--primary.is-plain,
+.el-button--primary.is-text,
+.el-button--primary.is-link {
+  --el-button-hover-text-color: var(--cinnabar-deep);
+}
+.el-button:not(.el-button--primary):not(.is-text):not(.is-link):hover {
+  border-color: var(--cinnabar);
+  color: var(--cinnabar);
+  background: var(--cinnabar-wash);
+}
+
+/* 卡片：纸面、细边、暖影 */
+.el-card {
+  background: var(--paper-card);
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  color: var(--ink);
+  box-shadow: none;
+  transition: box-shadow 0.25s ease, transform 0.25s ease,
+    border-color 0.25s ease;
+}
+.el-card.is-hover-shadow:hover {
+  box-shadow: 0 6px 22px rgba(60, 50, 30, 0.12);
+  border-color: var(--hairline-dark);
+}
+.el-card__header {
+  border-bottom: 1px solid var(--hairline);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+/* 输入类：纸面底、细边、朱砂焦点 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  background: var(--paper-card);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--hairline-dark) inset;
+}
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--cinnabar) inset !important;
+}
+.el-form-item__label {
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+}
+
+/* 标签：直角、描边风 */
+.el-tag {
+  border-radius: 2px;
+  letter-spacing: 0.05em;
+}
+
+/* 分页 */
+.el-pagination {
+  --el-pagination-hover-color: var(--cinnabar);
+  font-family: var(--font-serif);
+}
+.el-pagination.is-background .el-pager li.is-active {
+  background: var(--ink);
+}
+
+/* 表格 */
+.el-table {
+  --el-table-header-bg-color: var(--paper-deep);
+  --el-table-border-color: var(--hairline);
+  --el-table-row-hover-bg-color: #f2ecdc;
+  font-family: var(--font-serif);
+}
+.el-table th.el-table__cell {
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+
+/* 弹层 / 消息 */
+.el-dropdown-menu,
+.el-select-dropdown,
+.el-picker-panel,
+.el-message-box,
+.el-popover.el-popper {
+  border-radius: 2px;
+  border: 1px solid var(--hairline-dark);
+  background: var(--paper-card);
+  font-family: var(--font-serif);
+}
+.el-message {
+  border-radius: 2px;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
+}
+.el-dialog {
+  border-radius: 2px;
+  background: var(--paper-card);
+}
+.el-dialog__title {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* 上传 / 头像等杂项 */
+.el-avatar {
+  font-family: var(--font-serif);
+}
+.el-empty__description p {
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+}
+.el-loading-mask {
+  background-color: rgba(245, 241, 230, 0.7);
+}
+.el-divider {
+  border-color: var(--hairline);
+}
+.el-tabs__item {
+  letter-spacing: 0.1em;
+  font-weight: 500;
+}
+.el-tabs__item.is-active,
+.el-tabs__item:hover {
+  color: var(--cinnabar);
+}
+.el-tabs__active-bar {
+  background: var(--cinnabar);
+}
+
+/* ---------- 正文排版（文章详情 / 编辑器预览 / 散文结果） ---------- */
+
+.article-content {
+  line-height: 2;
+  font-size: 16.5px;
+  word-break: break-word;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.article-content img {
+  max-width: 100%;
+  border: 1px solid var(--hairline);
+}
+
+.article-content h1,
+.article-content h2,
+.article-content h3,
+.article-content h4 {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  margin: 1.4em 0 0.6em;
+}
+
+.article-content h2 {
+  padding-left: 12px;
+  border-left: 4px solid var(--cinnabar);
+}
+
+.article-content blockquote {
+  margin: 1.2em 0;
+  padding: 4px 18px;
+  border-left: 3px solid var(--hairline-dark);
+  color: var(--ink-soft);
+  background: rgba(236, 230, 213, 0.45);
+}
+
+.article-content pre {
+  background: #2b2925;
+  color: #e8e2d2;
+  padding: 16px;
+  border-radius: 2px;
+  overflow: auto;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.article-content code {
+  background: var(--paper-deep);
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 0.88em;
+}
+
+.article-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.article-content hr {
+  border: none;
+  border-top: 1px solid var(--hairline-dark);
+  margin: 2em auto;
+  width: 42%;
+}
+
+.article-content a {
+  color: var(--cinnabar);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(176, 58, 38, 0.35);
+}
+
+.markdown-body {
+  line-height: 1.9;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.markdown-body pre {
+  background: #2b2925;
+  color: #e8e2d2;
+  padding: 14px;
+  border-radius: 2px;
+  overflow: auto;
+  font-size: 13px;
+}
+
+.markdown-body code {
+  background: var(--paper-deep);
+  padding: 2px 5px;
+  border-radius: 2px;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  margin: 16px 0 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.markdown-body blockquote {
+  margin: 1em 0;
+  padding: 2px 14px;
+  border-left: 3px solid var(--hairline-dark);
+  color: var(--ink-soft);
+}
+
+/* ---------- 工具类 ---------- */
+
+.ink-link {
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.ink-link:hover {
+  color: var(--cinnabar);
+}
+
+.seal-text {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.5em;
+}
+
+/* 面板：纸面 + 顶部粗墨线 */
+.panel-card {
+  border-top: 3px solid var(--ink);
+}
+
+/* 表格纸面外框 */
+.sheet {
+  background: var(--paper-card);
+  border: 1px solid var(--hairline);
+  border-top: 3px solid var(--ink);
+  padding: 0 10px;
+}
