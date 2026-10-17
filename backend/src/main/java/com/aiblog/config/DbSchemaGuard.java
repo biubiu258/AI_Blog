@@ -25,6 +25,7 @@ public class DbSchemaGuard implements CommandLineRunner {
         addColumnIfMissing("user", "banned_until",
                 "DATETIME NULL COMMENT '封禁截止时间，NULL=永久'");
         ensureAdminLogTable();
+        ensureCareLogTable();
     }
 
     private void addColumnIfMissing(String table, String column, String definition) {
@@ -52,6 +53,21 @@ public class DbSchemaGuard implements CommandLineRunner {
                     PRIMARY KEY (`id`),
                     KEY `idx_admin_log_admin` (`admin_id`, `created_at`)
                 ) ENGINE = InnoDB COMMENT '管理员操作审计日志';
+                """);
+    }
+
+    /** 人文关怀检测审计：只记 等级+用户+文章+时间，不含文章原文 */
+    private void ensureCareLogTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS `care_log` (
+                    `id`         BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
+                    `user_id`    BIGINT      NOT NULL COMMENT '触发检测的作者',
+                    `article_id` BIGINT      NULL COMMENT '触发文章',
+                    `level`      VARCHAR(8)  NOT NULL COMMENT '检测级别：low/mid/high',
+                    `created_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    KEY `idx_care_log_user` (`user_id`)
+                ) ENGINE = InnoDB COMMENT '人文关怀检测审计（不含原文）';
                 """);
     }
 }

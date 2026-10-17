@@ -59,3 +59,10 @@ ai:
 logging:
   level:
     com.aiblog: info
+
+# 人文关怀检测（契约 5.8）：发布时情绪/危机检测，超时或异常按无风险放行（fail-open）
+app:
+  care:
+    timeout-ms: 5000
+    # 演示开关：注入 none/low/mid/high 时跳过 Python 检测直接返回该级别，默认空=关闭
+    mock-level: ${CARE_MOCK_LEVEL:}

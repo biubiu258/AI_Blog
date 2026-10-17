@@ -71,6 +71,10 @@
       <span class="colophon-dot">◆</span>
       <span>AI 辅助发文博客系统</span>
     </footer>
+
+    <!-- 人文关怀呈现组件：发布响应经 careBus 分发（low 信笺 / mid 短笺） -->
+    <CareNote />
+    <CareDialog />
   </div>
 </template>
 
@@ -78,6 +82,8 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import CareNote from '../care/CareNote.vue'
+import CareDialog from '../care/CareDialog.vue'
 
 const route = useRoute()
 const router = useRouter()

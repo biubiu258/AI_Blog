@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS `article` (
     `title`        VARCHAR(200) NOT NULL COMMENT '标题',
     `content_html` LONGTEXT     NULL COMMENT '经白名单清洗后的正文 HTML',
     `summary`      VARCHAR(500) NULL COMMENT '摘要，可选',
-    `status`       VARCHAR(16)  NOT NULL DEFAULT 'draft' COMMENT 'draft / published',
+    `status`       VARCHAR(16)  NOT NULL DEFAULT 'draft' COMMENT 'draft / published / private（private 为风控专属，仅作者可见）',
     `published_at` DATETIME     NULL COMMENT '发布时间',
     `deleted`      TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除标记',
     `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -104,3 +104,14 @@ CREATE TABLE IF NOT EXISTS `admin_log` (
     PRIMARY KEY (`id`),
     KEY `idx_admin_log_admin` (`admin_id`, `created_at`)
 ) ENGINE = InnoDB COMMENT '管理员操作审计日志';
+
+-- 人文关怀检测审计（不含文章原文）
+CREATE TABLE IF NOT EXISTS `care_log` (
+    `id`         BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `user_id`    BIGINT      NOT NULL COMMENT '触发检测的作者',
+    `article_id` BIGINT      NULL COMMENT '触发文章',
+    `level`      VARCHAR(8)  NOT NULL COMMENT '检测级别：low/mid/high',
+    `created_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_care_log_user` (`user_id`)
+) ENGINE = InnoDB COMMENT '人文关怀检测审计（不含原文）';

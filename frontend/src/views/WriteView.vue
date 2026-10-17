@@ -117,6 +117,7 @@ import { marked } from 'marked'
 import { articleApi, categoryApi } from '../api'
 import request from '../api/request'
 import { aiGenerate } from '../api/ai'
+import { emitCare } from '../care/careBus'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -324,16 +325,29 @@ async function save(status) {
       summary: form.summary || undefined,
       status
     }
+    let data
     if (articleId.value) {
-      await articleApi.update(articleId.value, payload)
+      data = await articleApi.update(articleId.value, payload)
     } else {
-      await articleApi.create(payload)
+      data = await articleApi.create(payload)
     }
-    ElMessage.success(status === 'published' ? '发布成功' : '草稿已保存')
-    router.push('/my')
+    afterPublish(status, data)
   } finally {
     saving.value = false
   }
+}
+
+/** 发布响应关怀分支（契约 5.8）：high → 危机页（文章已私密发布）；low/mid → 信笺/短笺 */
+function afterPublish(status, data) {
+  if (status === 'published' && data?.care?.level === 'high') {
+    router.push(`/care/crisis?article=${data.id}`)
+    return
+  }
+  if (status === 'published' && (data?.care?.level === 'low' || data?.care?.level === 'mid')) {
+    emitCare({ level: data.care.level, summary: data.care.summary })
+  }
+  ElMessage.success(status === 'published' ? '发布成功' : '草稿已保存')
+  router.push('/my')
 }
 
 onMounted(async () => {

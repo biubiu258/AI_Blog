@@ -52,6 +52,12 @@ const routes = [
   },
   { path: '/login', name: 'login', component: () => import('../views/LoginView.vue') },
   { path: '/register', name: 'register', component: () => import('../views/RegisterView.vue') },
+  {
+    // 危机关怀页：独立全屏、不套 Layout、未登录可开
+    path: '/care/crisis',
+    name: 'care-crisis',
+    component: () => import('../care/CrisisView.vue')
+  },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 

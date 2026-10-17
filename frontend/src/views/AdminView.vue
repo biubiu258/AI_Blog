@@ -112,6 +112,7 @@
               <el-option label="全部状态" value="" />
               <el-option label="草稿" value="draft" />
               <el-option label="已发布" value="published" />
+              <el-option label="仅自己可见" value="private" />
             </el-select>
             <el-button v-if="contentKind === 'articles'" type="warning"
                        :disabled="!selectedRows.length" @click="batchUnpublish">
@@ -138,10 +139,10 @@
             <el-table-column label="分类" width="100">
               <template #default="{ row }">{{ row.categoryName || '-' }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="90">
+            <el-table-column label="状态" width="110">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'published' ? 'success' : 'warning'" size="small" effect="plain">
-                  {{ row.status === 'published' ? '已发布' : '草稿' }}
+                <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
+                  {{ statusLabel(row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -511,6 +512,18 @@ function actionLabel(value) {
 }
 function formatDate(value) {
   return value ? String(value).replace('T', ' ').slice(0, 16) : ''
+}
+
+// 文章状态展示：private 为风控私密发布，仅作者可见
+function statusTagType(status) {
+  if (status === 'published') return 'success'
+  if (status === 'private') return 'info'
+  return 'warning'
+}
+function statusLabel(status) {
+  if (status === 'published') return '已发布'
+  if (status === 'private') return '仅自己可见'
+  return '草稿'
 }
 
 watch(activeTab, (tab) => {

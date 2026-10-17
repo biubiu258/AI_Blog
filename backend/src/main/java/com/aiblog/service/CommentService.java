@@ -116,7 +116,7 @@ public class CommentService {
     }
 
     /**
-     * 草稿的评论仅作者/管理员可见，其余情况要求文章存在。
+     * 草稿的评论仅作者/管理员可见；私密文章（风控）仅作者可见，他人与游客一律 404。
      */
     private Article mustGetVisibleArticle(Long articleId) {
         Article article = articleMapper.selectById(articleId);
@@ -132,6 +132,17 @@ public class CommentService {
             }
             if (!Objects.equals(article.getAuthorId(), currentId) && !CurrentUser.get().isAdmin()) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "草稿仅作者可见");
+            }
+        }
+        if ("private".equals(article.getStatus())) {
+            Long currentId;
+            try {
+                currentId = CurrentUser.id();
+            } catch (BusinessException e) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "文章不存在");
+            }
+            if (!Objects.equals(article.getAuthorId(), currentId)) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "文章不存在");
             }
         }
         return article;

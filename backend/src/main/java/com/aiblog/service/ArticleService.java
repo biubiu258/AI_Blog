@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +39,7 @@ public class ArticleService {
     private final CategoryService categoryService;
     private final UserMapper userMapper;
     private final VectorSyncService vectorSyncService;
+    private final CareService careService;
 
     /**
      * 公开文章列表：仅已发布，支持分类与关键词（命中标题或正文）。
@@ -91,6 +93,10 @@ public class ArticleService {
         if ("draft".equals(article.getStatus()) && !isAuthor && !isAdmin) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "草稿仅作者可见");
         }
+        // 私密发布（风控检测 high）：仅作者本人可见，他人与游客一律 404，不泄露存在性
+        if ("private".equals(article.getStatus()) && !isAuthor) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文章不存在");
+        }
         Category category = article.getCategoryId() == null
                 ? null : categoryService.mustGetOrNull(article.getCategoryId());
         User author = userMapper.selectById(article.getAuthorId());
@@ -103,10 +109,19 @@ public class ArticleService {
         if (request.getCategoryId() != null) {
             categoryService.mustGet(request.getCategoryId());
         }
+        // 检测只挂在发布动作上（契约 5.8），存草稿不检测
+        boolean publishing = "published".equals(request.getStatus());
+        CareService.CareResult care = publishing
+                ? careService.check(CurrentUser.id(), request.getTitle(), request.getContentHtml())
+                : CareService.CareResult.none();
         Article article = new Article();
         applyRequest(article, request);
+        // 危机倾向：照常发布但仅作者可见（publishedAt 照设、不进公共语义检索），发布流程零打断
+        if (publishing && care.high()) {
+            article.setStatus("private");
+        }
         article.setAuthorId(CurrentUser.id());
-        if ("published".equals(request.getStatus())) {
+        if (publishing) {
             article.setPublishedAt(LocalDateTime.now());
         }
         articleMapper.insert(article);
@@ -114,7 +129,8 @@ public class ArticleService {
         if ("published".equals(article.getStatus())) {
             vectorSyncService.upsert(article);
         }
-        return Map.of("id", article.getId(), "status", article.getStatus());
+        careService.record(article.getAuthorId(), article.getId(), care.level());
+        return buildSaveResponse(article, care);
     }
 
     public Map<String, Object> update(Long id, ArticleSaveRequest request) {
@@ -125,19 +141,41 @@ public class ArticleService {
             categoryService.mustGet(request.getCategoryId());
         }
         boolean wasPublished = "published".equals(article.getStatus());
+        boolean publishing = "published".equals(request.getStatus());
+        // 再次发布 = 重新检测：内容修改后 level 降级则自动转回公开
+        CareService.CareResult care = publishing
+                ? careService.check(CurrentUser.id(), request.getTitle(), request.getContentHtml())
+                : CareService.CareResult.none();
         applyRequest(article, request);
-        if ("published".equals(request.getStatus()) && article.getPublishedAt() == null) {
+        if (publishing && care.high()) {
+            article.setStatus("private");
+        }
+        if (publishing && article.getPublishedAt() == null) {
             article.setPublishedAt(LocalDateTime.now());
         }
         articleMapper.updateById(article);
         log.info("文章更新: id={}, status={}", article.getId(), article.getStatus());
-        // 发布态才需要向量；撤回为草稿或编辑草稿则移除向量
+        // 发布态才需要向量；转私密或撤回为草稿则移除向量
         if ("published".equals(article.getStatus())) {
             vectorSyncService.upsert(article);
         } else if (wasPublished) {
             vectorSyncService.delete(article.getId());
         }
-        return Map.of("id", article.getId(), "status", article.getStatus());
+        careService.record(article.getAuthorId(), article.getId(), care.level());
+        return buildSaveResponse(article, care);
+    }
+
+    /** 保存响应：care 仅在 level≠none 时携带（high 时 status 已转 private） */
+    private Map<String, Object> buildSaveResponse(Article article, CareService.CareResult care) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("id", article.getId());
+        resp.put("status", article.getStatus());
+        if (care.present()) {
+            resp.put("care", Map.of(
+                    "level", care.level(),
+                    "summary", care.summary() == null ? "" : care.summary()));
+        }
+        return resp;
     }
 
     public void delete(Long id) {

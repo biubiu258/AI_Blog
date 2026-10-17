@@ -10,6 +10,7 @@
         <el-radio-button value="">全部</el-radio-button>
         <el-radio-button value="draft">草稿</el-radio-button>
         <el-radio-button value="published">已发布</el-radio-button>
+        <el-radio-button value="private">仅自己可见</el-radio-button>
       </el-radio-group>
       <el-button type="primary" @click="$router.push('/write')">
         <el-icon><Plus /></el-icon>&nbsp;写文章
@@ -32,11 +33,11 @@
         <el-table-column label="分类" width="110">
           <template #default="{ row }">{{ row.categoryName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="96">
+        <el-table-column label="状态" width="110">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'published' ? 'success' : 'warning'" size="small" effect="plain">
-              {{ row.status === 'published' ? '已发布' : '草稿' }}
-            </el-tag>
+            <el-tag v-if="row.status === 'published'" type="success" size="small" effect="plain">已发布</el-tag>
+            <el-tag v-else-if="row.status === 'private'" type="info" size="small" effect="plain">仅自己可见</el-tag>
+            <el-tag v-else type="warning" size="small" effect="plain">草稿</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="更新时间" width="170">
@@ -45,9 +46,10 @@
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="$router.push(`/write/${row.id}`)">编辑</el-button>
-            <el-button v-if="row.status === 'draft'" link type="success"
-                       @click="publish(row)">发布</el-button>
-            <el-button v-else link type="warning" @click="withdraw(row)">撤回</el-button>
+            <el-button v-if="row.status === 'draft' || row.status === 'private'" link type="success"
+                       @click="publish(row)">{{ row.status === 'private' ? '重新发布' : '发布' }}</el-button>
+            <el-button v-if="row.status === 'published'" link type="warning"
+                       @click="withdraw(row)">撤回</el-button>
             <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -63,8 +65,12 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { articleApi } from '../api'
+import { emitCare } from '../care/careBus'
+
+const router = useRouter()
 
 const loading = ref(false)
 const items = ref([])
@@ -90,13 +96,21 @@ async function load(page = query.page) {
 
 async function publish(row) {
   const detail = await articleApi.detail(row.id)
-  await articleApi.update(row.id, {
+  const data = await articleApi.update(row.id, {
     title: detail.title,
     categoryId: detail.categoryId,
     contentHtml: detail.contentHtml,
     summary: detail.summary,
     status: 'published'
   })
+  // 关怀分支：high 已私密发布 → 危机页；low/mid → 信笺/短笺
+  if (data?.care?.level === 'high') {
+    router.push(`/care/crisis?article=${data.id}`)
+    return
+  }
+  if (data?.care?.level === 'low' || data?.care?.level === 'mid') {
+    emitCare({ level: data.care.level, summary: data.care.summary })
+  }
   ElMessage.success('已发布')
   load()
 }
