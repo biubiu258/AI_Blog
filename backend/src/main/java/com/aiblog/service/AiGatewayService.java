@@ -27,6 +27,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -71,8 +75,10 @@ public class AiGatewayService {
         validateForTask(request);
         Map<String, Object> payload = buildPayload(user, request);
 
-        // 先以同步等待建立到 Python 的连接：流建立前失败返回普通 JSON（2001/2002），
-        // 一旦 2xx，把响应体作为流转发给 SseEmitter。
+        // 等待 Python 返回响应头（body 为流，头到达即完成，不等整流）；
+        // 流建立前失败返回普通 JSON（2001/2002），一旦 2xx 把响应体作为流转发给 SseEmitter。
+        // 注意：不能用 exchangeToMono 保留 body Flux 稍后消费——连接会被提前释放，
+        // 必须用 toEntityFlux 让 WebClient 正确管理流式响应的连接。
         ResponseEntity<Flux<DataBuffer>> upstream;
         try {
             upstream = aiWebClient.post()
@@ -80,16 +86,12 @@ public class AiGatewayService {
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.TEXT_EVENT_STREAM)
                     .bodyValue(payload)
-                    .exchangeToMono(response -> {
-                        if (response.statusCode().is2xxSuccessful()) {
-                            return Mono.just(ResponseEntity.status(response.statusCode())
-                                    .headers(response.headers().asHttpHeaders())
-                                    .body(response.bodyToFlux(DataBuffer.class)));
-                        }
-                        return response.bodyToMono(String.class).defaultIfEmpty("")
-                                .flatMap(body -> Mono.error(
-                                        new PythonResponseException(response.statusCode(), body)));
-                    })
+                    .retrieve()
+                    .onStatus(status -> !status.is2xxSuccessful(), response ->
+                            response.bodyToMono(String.class).defaultIfEmpty("")
+                                    .flatMap(body -> Mono.error(
+                                            new PythonResponseException(response.statusCode(), body))))
+                    .toEntityFlux(DataBuffer.class)
                     .block(java.time.Duration.ofSeconds(properties.getPreStreamWaitSeconds()));
         } catch (PythonResponseException e) {
             throw translate(e);
@@ -116,13 +118,16 @@ public class AiGatewayService {
         SseEmitter emitter = new SseEmitter(properties.getSseTimeoutMs());
         // 解析器持有跨分块状态，必须每个请求独立实例
         SseParser parser = new SseParser();
+        // 解码器同样跨分块：DataBuffer 边界可能切在中文等多字节字符中间，
+        // 逐块 new String(bytes, UTF_8) 会产出替换字符 �
+        Utf8StreamDecoder decoder = new Utf8StreamDecoder();
 
         Flux<SseParser.SseEvent> events = body
                 .map(buffer -> {
                     try {
                         byte[] bytes = new byte[buffer.readableByteCount()];
                         buffer.read(bytes);
-                        return new String(bytes, StandardCharsets.UTF_8);
+                        return decoder.decode(bytes);
                     } finally {
                         DataBufferUtils.release(buffer);
                     }
@@ -256,7 +261,7 @@ public class AiGatewayService {
     }
 
     /**
-     * 散文任务校验：至少 1 张站内图片 + 情绪或近况至少其一。
+     * 散文任务校验：情绪或近况至少其一（图片可选）；有图片时校验数量与地址合法性。
      * 图片只允许站内 /uploads/ 相对路径或指向本站的绝对地址，避免 SSRF。
      */
     private void validateProse(AiGenerateRequest.Params params, AiGenerateRequest.Context context) {
@@ -266,10 +271,11 @@ public class AiGatewayService {
         checkLength("recent_state", recentState, MAX_RECENT_STATE);
 
         List<String> images = context == null ? null : context.getImageUrls();
-        require(images != null && !images.isEmpty(), "散文生成需要至少上传 1 张图片（image_urls）");
-        require(images.size() <= MAX_IMAGES, "图片数量不能超过 " + MAX_IMAGES + " 张");
-        for (String url : images) {
-            require(isAllowedImageUrl(url), "图片地址不合法，仅支持站内上传的图片");
+        if (images != null && !images.isEmpty()) {
+            require(images.size() <= MAX_IMAGES, "图片数量不能超过 " + MAX_IMAGES + " 张");
+            for (String url : images) {
+                require(isAllowedImageUrl(url), "图片地址不合法，仅支持站内上传的图片");
+            }
         }
         require(hasText(emotion) || hasText(recentState),
                 "请至少填写情绪或近况，AI 才能贴合你的心境");
@@ -327,5 +333,33 @@ public class AiGatewayService {
                     message == null ? "AI 生成参数不合法" : message);
             default -> new BusinessException(ErrorCode.AI_SERVICE_ERROR, "AI 服务异常，请稍后重试");
         };
+    }
+
+    /**
+     * 跨分块的 UTF-8 增量解码器。
+     * WebClient 的 DataBuffer 边界与字符边界无关，可能把一个中文字符的 3 个字节
+     * 切到两块里；逐块独立解码会把残缺字节变成 U+FFFD（前端显示为 �）。
+     * 这里把上一块未消费的尾部字节留到下一块拼接后再解码。
+     */
+    private static final class Utf8StreamDecoder {
+
+        private final CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
+
+        private ByteBuffer carry = ByteBuffer.allocate(0);
+
+        String decode(byte[] bytes) {
+            ByteBuffer input = ByteBuffer.allocate(carry.remaining() + bytes.length);
+            input.put(carry).put(bytes).flip();
+            // UTF-8 每字节最多解出 1 个 char，容量取字节数即可
+            CharBuffer output = CharBuffer.allocate(input.remaining() + 1);
+            decoder.decode(input, output, false);
+            output.flip();
+            // decode 遇到不完整的多字节序列时会把这些字节留在 input 中
+            carry = ByteBuffer.allocate(input.remaining());
+            carry.put(input).flip();
+            return output.toString();
+        }
     }
 }

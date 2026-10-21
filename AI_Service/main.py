@@ -1,16 +1,11 @@
-# This is a sample Python script.
+"""启动入口：python main.py 等价于 python server.py。
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+PyCharm 可直接运行本文件；生产部署用：
+    uvicorn server:app --host 0.0.0.0 --port 8000
+"""
+import uvicorn
 
+from config import HOST, PORT
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+if __name__ == "__main__":
+    uvicorn.run("server:app", host=HOST, port=PORT, reload=False)

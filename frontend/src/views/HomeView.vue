@@ -6,38 +6,59 @@
         <div class="page-sub">CONTENTS · 共 {{ total }} 篇</div>
       </div>
       <div class="search-bar">
-        <el-select v-model="query.categoryId" placeholder="全部分类" clearable class="cat-select"
-                   @change="load(1)">
+        <el-radio-group v-model="mode" class="mode-switch" @change="onModeChange">
+          <el-radio-button value="keyword">关键词</el-radio-button>
+          <el-tooltip content="登录后可用" :disabled="auth.isLoggedIn" placement="bottom">
+            <el-radio-button value="semantic" :disabled="!auth.isLoggedIn">语义</el-radio-button>
+          </el-tooltip>
+        </el-radio-group>
+        <el-select v-if="mode === 'keyword'" v-model="query.categoryId" placeholder="全部分类" clearable
+                   class="cat-select" @change="load(1)">
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
-        <el-input v-model="query.keyword" placeholder="搜索标题或正文关键词" clearable
-                  class="kw-input" @keyup.enter="load(1)">
+        <el-input v-model="query.keyword"
+                  :placeholder="mode === 'keyword' ? '搜索标题或正文关键词' : '用一句话描述你想找的内容'"
+                  clearable class="kw-input" @keyup.enter="submit()">
           <template #append>
-            <el-button @click="load(1)"><el-icon><Search /></el-icon></el-button>
+            <el-button @click="submit()"><el-icon><Search /></el-icon></el-button>
           </template>
         </el-input>
       </div>
     </header>
 
-    <el-empty v-if="!loading && items.length === 0" description="暂无文章" />
+    <el-alert v-if="mode === 'semantic' && degraded" class="degraded-tip" type="info" show-icon
+              :closable="false" title="语义检索暂不可用，已按关键词检索" />
+
+    <el-empty v-if="!loading && displayItems.length === 0"
+              :description="mode === 'semantic' ? '没有找到相关内容' : '暂无文章'" />
     <div v-loading="loading" class="article-list">
-      <article v-for="(a, i) in items" :key="a.id" class="entry"
-               @click="$router.push(`/article/${a.id}`)">
-        <span class="entry-index">{{ pad((query.page - 1) * query.size + i + 1) }}</span>
+      <article v-for="(a, i) in displayItems" :key="a.id" class="entry"
+               @click="a.id != null && $router.push(`/article/${a.id}`)">
+        <span class="entry-index">{{ pad(entryIndex(i)) }}</span>
         <div class="entry-main">
           <h2 class="entry-title">{{ a.title }}</h2>
-          <p class="entry-summary">{{ a.summary || plainSummary(a) }}</p>
+          <p class="entry-summary">{{ a.snippet || a.summary || plainSummary(a) }}</p>
           <div class="entry-meta">
-            <span class="meta-author">{{ a.authorNickname || '佚名' }}</span>
-            <el-tag v-if="a.categoryName" size="small" effect="plain">{{ a.categoryName }}</el-tag>
-            <span class="meta-date">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
+            <template v-if="mode === 'keyword'">
+              <span class="meta-author">{{ a.authorNickname || '佚名' }}</span>
+              <el-tag v-if="a.categoryName" size="small" effect="plain">{{ a.categoryName }}</el-tag>
+              <span class="meta-date">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
+            </template>
+            <template v-else>
+              <el-tag size="small" effect="plain" :type="a.matchType === 'semantic' ? 'success' : 'info'">
+                {{ a.matchType === 'semantic' ? '语义' : '关键词' }}
+              </el-tag>
+              <el-tag v-if="a.status === 'draft'" size="small" type="warning" effect="plain">草稿</el-tag>
+              <el-tag v-else-if="a.status === 'private'" size="small" type="danger" effect="plain">仅自己可见</el-tag>
+              <span v-if="a.score != null" class="meta-score">相似度 {{ a.score.toFixed(2) }}</span>
+            </template>
           </div>
         </div>
         <span class="entry-arrow">→</span>
       </article>
     </div>
 
-    <div class="pager">
+    <div v-if="mode === 'keyword'" class="pager">
       <el-pagination background layout="prev, pager, next, total" :total="total"
                      :page-size="query.size" :current-page="query.page"
                      @current-change="load" />
@@ -46,14 +67,21 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { articleApi, categoryApi } from '../api'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { articleApi, categoryApi, searchApi } from '../api'
+import { useAuthStore } from '../stores/auth'
 
+const auth = useAuthStore()
 const loading = ref(false)
 const items = ref([])
 const total = ref(0)
 const categories = ref([])
+const mode = ref('keyword')
+const semantic = reactive({ degraded: false, items: [] })
 const query = reactive({ page: 1, size: 10, categoryId: null, keyword: '' })
+
+const displayItems = computed(() => (mode.value === 'semantic' ? semantic.items : items.value))
+const degraded = computed(() => semantic.degraded)
 
 async function load(page = query.page) {
   query.page = page
@@ -70,6 +98,41 @@ async function load(page = query.page) {
   } finally {
     loading.value = false
   }
+}
+
+async function loadSemantic() {
+  if (!query.keyword.trim()) {
+    semantic.items = []
+    semantic.degraded = false
+    return
+  }
+  loading.value = true
+  try {
+    const data = await searchApi.search({ query: query.keyword, topK: 10 })
+    semantic.items = data.items || []
+    semantic.degraded = !!data.degraded
+  } finally {
+    loading.value = false
+  }
+}
+
+function submit(page = 1) {
+  if (mode.value === 'semantic') {
+    return loadSemantic()
+  }
+  return load(page)
+}
+
+function onModeChange(val) {
+  if (val === 'semantic') {
+    loadSemantic()
+  } else {
+    load(1)
+  }
+}
+
+function entryIndex(i) {
+  return mode.value === 'semantic' ? i + 1 : (query.page - 1) * query.size + i + 1
 }
 
 function plainSummary(a) {
@@ -110,6 +173,16 @@ onMounted(async () => {
 .cat-select {
   width: 140px;
   flex-shrink: 0;
+}
+.mode-switch {
+  flex-shrink: 0;
+}
+.degraded-tip {
+  margin-bottom: 16px;
+}
+.meta-score {
+  color: var(--ink-faint);
+  letter-spacing: 0.05em;
 }
 .kw-input {
   flex: 1;

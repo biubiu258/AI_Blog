@@ -32,8 +32,21 @@ public class AiProperties {
     /** Java -> Python 读超时（契约 5.7.3：120s） */
     private int readTimeoutMs = 120000;
 
-    /** 建立 SSE 流前等待连接的最长时间（> 连接超时） */
-    private int preStreamWaitSeconds = 5;
+    /**
+     * 建立 SSE 流前等待连接的最长时间（> 连接超时）。
+     * Python 现在先回响应头再做图片转换与模型调用，正常应秒级返回；
+     * 15s 用于兜底慢磁盘/慢网络场景。
+     */
+    private int preStreamWaitSeconds = 15;
+
+    /** P1 语义搜索读超时（独立于生成的 120s，避免用户久等） */
+    private int searchReadTimeoutMs = 10000;
+
+    /** P1 语义搜索结果条数上限 */
+    private int searchMaxTopK = 20;
+
+    /** 演示开关：填入 JSON 数组时跳过 Python 直接返回 mock hits，默认空=关闭 */
+    private String searchMockHits = "";
 
     /** SseEmitter 超时（契约 5.7.3：120s） */
     private long sseTimeoutMs = 120000;

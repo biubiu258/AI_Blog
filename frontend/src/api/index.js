@@ -23,6 +23,10 @@ export const articleApi = {
   remove: (id) => request.delete(`/articles/${id}`)
 }
 
+export const searchApi = {
+  search: (data) => request.post('/ai/search', data)
+}
+
 export const categoryApi = {
   list: () => request.get('/categories'),
   create: (data) => request.post('/categories', data),

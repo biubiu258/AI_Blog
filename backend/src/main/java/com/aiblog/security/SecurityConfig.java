@@ -48,6 +48,10 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE 异步派发：首次请求已鉴权，容器在 emitter.complete() 后
+                        // 会再走一次 ASYNC 派发，此时 SecurityContext 已清理，
+                        // 不放开会被 AccessDenied 打断，导致响应被强制中断（前端读流出错）
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll()
                         // 注册、登录、登录验证码公开
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/captcha").permitAll()
                         // “我的文章”必须登录（声明在通配符之前）

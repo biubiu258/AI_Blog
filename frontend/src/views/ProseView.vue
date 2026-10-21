@@ -11,7 +11,7 @@
           <template #header>
             <div class="card-header">
               <span>素材</span>
-              <el-tag size="small" type="info">图片 1 - 5 张</el-tag>
+              <el-tag size="small" type="info">图片选填，最多 5 张</el-tag>
             </div>
           </template>
 
@@ -33,6 +33,12 @@
           </div>
 
           <el-form label-position="top" class="material-form">
+            <el-form-item label="散文风格">
+              <el-radio-group v-model="style">
+                <el-radio-button value="luxun">鲁迅散文</el-radio-button>
+                <el-radio-button value="plain">自由白话</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
             <el-form-item label="此刻的情绪">
               <el-input v-model="emotion" maxlength="200" show-word-limit
                         placeholder="如：平静、疲惫、怅然若失…" />
@@ -49,7 +55,7 @@
             <el-button v-if="generating" type="danger" @click="stopGenerate">停止生成</el-button>
           </div>
           <div v-if="!canGenerate && !generating" class="hint">
-            请至少上传 1 张图片，并填写情绪或近况其一
+            填写情绪或近况其一即可生成；图片可选
           </div>
         </el-card>
       </el-col>
@@ -71,7 +77,7 @@
             正在生成，已接收 {{ outputMd.length }} 字…
           </div>
           <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
-          <el-empty v-else description="左侧上传图片、写下情绪，点击生成" />
+          <el-empty v-else description="写下情绪或近况，点击生成；配图更有画面感" />
 
           <template v-if="outputMd && !generating">
             <el-form-item label="标题" class="title-item">
@@ -103,6 +109,7 @@ const router = useRouter()
 
 const images = ref([])
 const uploading = ref(false)
+const style = ref('luxun')
 const emotion = ref('')
 const recentState = ref('')
 
@@ -113,7 +120,7 @@ const saving = ref(false)
 let abortController = null
 
 const canGenerate = computed(() =>
-  images.value.length > 0 && (!!emotion.value.trim() || !!recentState.value.trim()))
+  !!emotion.value.trim() || !!recentState.value.trim())
 
 const renderedOutput = computed(() => {
   try {
@@ -156,6 +163,7 @@ function buildPayload() {
   return {
     task: 'prose',
     params: {
+      style: style.value,
       emotion: emotion.value.trim() || undefined,
       recentState: recentState.value.trim() || undefined
     },
@@ -181,8 +189,15 @@ async function startGenerate() {
       onDone: (content) => {
         outputMd.value = content
         if (!title.value) title.value = deriveTitle(content)
+        // 服务端已给出终态：立即解锁 UI 并主动断开连接。
+        // 不能只依赖 await 返回——底层连接若未正常收尾，会一直停在“正在生成”，
+        // 存为草稿的按钮也不会出现。
+        generating.value = false
+        abortController?.abort()
       },
       onError: (message, code) => {
+        // 错误帧也是终态：先解锁 UI，再提示原因
+        generating.value = false
         if (code === 'LLM_TIMEOUT') {
           ElMessage.error('生成超时，请重试')
         } else if (code === 'EMPTY_OUTPUT') {

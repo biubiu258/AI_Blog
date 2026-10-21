@@ -250,8 +250,12 @@ async function startGenerate() {
       onDone: (content) => {
         outputMd.value = content
         lastResult.value = content
+        // 终态即解锁：不依赖底层连接是否正常收尾
+        generating.value = false
+        abortController?.abort()
       },
       onError: (message, code) => {
+        generating.value = false
         if (code === 'LLM_TIMEOUT') {
           ElMessage.error('生成超时，请重试')
         } else if (code === 'EMPTY_OUTPUT') {
