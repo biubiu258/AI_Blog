@@ -22,5 +22,8 @@ backend/uploads/
 
 # Python
 AI_Service/.venv/
+AI_Service/.env
+AI_Service/data/
 __pycache__/
 *.pyc
+.pytest_cache/

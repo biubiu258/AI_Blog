@@ -1,11 +1,8 @@
-"""启动入口：python main.py 等价于 python server.py。
-
-PyCharm 可直接运行本文件；生产部署用：
-    uvicorn server:app --host 0.0.0.0 --port 8000
-"""
+"""兼容入口：PyCharm 可直接运行 main.py。"""
 import uvicorn
 
-from config import HOST, PORT
+from app.core.config import get_settings
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host=HOST, port=PORT, reload=False)
+    settings = get_settings()
+    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=False)
