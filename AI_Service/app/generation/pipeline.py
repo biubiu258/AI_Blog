@@ -43,6 +43,7 @@ async def _stream_step(
         guard = TextGuard(
             requires_h1=plan.requires_h1,
             expected_title=plan.expected_title,
+            strip_meta=plan.strip_meta,
         )
         stream = llm.stream_chat(
             step.messages,

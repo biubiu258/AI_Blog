@@ -66,9 +66,14 @@
           <template #header>
             <div class="card-header">
               <span>初稿</span>
-              <el-tag size="small" :type="generating ? 'warning' : 'info'">
-                {{ generating ? '流式生成中' : 'SSE 流式' }}
-              </el-tag>
+              <div class="header-actions">
+                <el-tag size="small" :type="generating ? 'warning' : 'info'">
+                  {{ generating ? '流式生成中' : (editing ? '编辑中' : 'SSE 流式') }}
+                </el-tag>
+                <el-button v-if="outputMd && !generating" size="small" @click="toggleEditing">
+                  {{ editing ? '完成编辑' : '编辑初稿' }}
+                </el-button>
+              </div>
             </div>
           </template>
 
@@ -76,8 +81,43 @@
             <el-icon class="is-loading"><Loading /></el-icon>
             正在生成，已接收 {{ outputMd.length }} 字…
           </div>
-          <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
-          <el-empty v-else description="写下情绪或近况，点击生成；配图更有画面感" />
+
+          <template v-if="editing">
+            <el-input ref="draftTextarea" v-model="outputMd" type="textarea" :rows="18"
+                      class="draft-editor" placeholder="在此修改初稿…"
+                      @select="onDraftSelect" @keyup="onDraftSelect" @mouseup="onDraftSelect"
+                      @input="onDraftInput" />
+            <div class="selection-bar">
+              <span class="selection-bar-label">
+                {{ draftSelection ? `已选中 ${draftSelection.selectedText.length} 字` : '选中文字后可让 AI 给建议' }}
+              </span>
+              <template v-if="draftSelection">
+                <el-button v-for="m in draftModes" :key="m.mode" size="small"
+                           :disabled="draftLoading" @click="askDraft(m.mode)">{{ m.label }}</el-button>
+              </template>
+            </div>
+            <div v-if="draftLoading" class="stream-tip">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              正在生成建议，已接收 {{ draftResult.length }} 字…
+            </div>
+            <template v-if="draftResult">
+              <div class="pane-caption">
+                <span class="pane-mode">{{ draftModeLabel }}</span>
+                <span>{{ draftSelection?.selectedText.length || 0 }} 字</span>
+              </div>
+              <blockquote v-if="draftSelection" class="pane-quote">{{ draftSelection.selectedText }}</blockquote>
+              <div class="markdown-body result-body" v-html="renderMarkdown(draftResult)"></div>
+              <div class="result-actions">
+                <el-button v-if="draftMode !== 'advice'" size="small" type="primary"
+                           @click="applyDraftSelectionSuggestion">替换选中</el-button>
+                <el-button size="small" @click="draftResult = ''">清除</el-button>
+              </div>
+            </template>
+          </template>
+          <template v-else>
+            <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
+            <el-empty v-else description="写下情绪或近况，点击生成；配图更有画面感" />
+          </template>
 
           <template v-if="outputMd && !generating">
             <el-form-item label="标题" class="title-item">
@@ -89,6 +129,17 @@
               </el-button>
               <el-button size="small" @click="copyResult">复制</el-button>
             </div>
+
+            <el-divider content-position="left">全文建议</el-divider>
+            <div class="review-bar">
+              <el-button size="small" type="primary" :loading="reviewLoading"
+                         :disabled="reviewLoading" @click="reviewDraft(false)">审阅初稿</el-button>
+              <span class="hint">建议基于当前初稿；点「替换」才会写入，可随时忽略</span>
+            </div>
+            <AiSuggestionPanel :suggestions="reviewSuggestions" :loading="reviewLoading"
+                               empty-text="暂无建议，点击「审阅初稿」开始"
+                               @locate="locateDraftSuggestion" @apply="applyDraftSuggestion"
+                               @ignore="ignoreDraftSuggestion" />
           </template>
         </el-card>
       </el-col>
@@ -103,7 +154,8 @@ import { ElMessage } from 'element-plus'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { articleApi, fileApi } from '../api'
-import { aiGenerate } from '../api/ai'
+import { aiGenerate, aiReview } from '../api/ai'
+import AiSuggestionPanel from '../components/AiSuggestionPanel.vue'
 
 const router = useRouter()
 
@@ -119,6 +171,216 @@ const title = ref('')
 const saving = ref(false)
 let abortController = null
 
+// ---------- 初稿编辑与划词建议 ----------
+const editing = ref(false)
+const draftTextarea = ref(null)
+const draftSelection = ref(null)
+const draftMode = ref('advice')
+const draftLoading = ref(false)
+const draftResult = ref('')
+let draftAbort = null
+
+const draftModes = [
+  { mode: 'advice', label: '给建议' },
+  { mode: 'polish', label: '润色' },
+  { mode: 'rewrite', label: '改写' },
+  { mode: 'expand', label: '扩写' },
+  { mode: 'condense', label: '缩写' }
+]
+
+const DRAFT_MODE_LABELS = {
+  advice: 'AI 建议',
+  polish: '润色建议',
+  rewrite: '改写建议',
+  expand: '扩写建议',
+  condense: '缩写建议'
+}
+const draftModeLabel = computed(() => DRAFT_MODE_LABELS[draftMode.value] || 'AI 建议')
+
+function renderMarkdown(md) {
+  try {
+    return DOMPurify.sanitize(marked.parse(md || '', { breaks: true }))
+  } catch {
+    return ''
+  }
+}
+
+function toggleEditing() {
+  editing.value = !editing.value
+  draftSelection.value = null
+  draftResult.value = ''
+}
+
+function textareaEl() {
+  return draftTextarea.value?.textarea || null
+}
+
+function onDraftSelect() {
+  const el = textareaEl()
+  if (!el) return
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  if (start === end || end - start > 2000) {
+    draftSelection.value = null
+    return
+  }
+  draftSelection.value = { start, end, selectedText: outputMd.value.slice(start, end) }
+}
+
+function onDraftInput() {
+  draftSelection.value = null
+}
+
+async function askDraft(mode) {
+  const snapshot = draftSelection.value
+  if (!snapshot || !snapshot.selectedText.trim()) {
+    ElMessage.warning('请先在初稿中选中一段文字')
+    return
+  }
+  const text = outputMd.value
+  draftMode.value = mode
+  draftResult.value = ''
+  draftLoading.value = true
+  draftAbort?.abort()
+  draftAbort = new AbortController()
+  try {
+    await aiGenerate({
+      task: 'suggest',
+      params: {
+        suggestionMode: mode,
+        topic: title.value || undefined,
+        style: style.value
+      },
+      context: {
+        selectedText: snapshot.selectedText,
+        textBefore: text.slice(Math.max(0, snapshot.start - 300), snapshot.start),
+        textAfter: text.slice(snapshot.end, snapshot.end + 300),
+        instruction: ''
+      }
+    }, {
+      signal: draftAbort.signal,
+      onDelta: (content) => {
+        draftResult.value += content
+      },
+      onDone: (content) => {
+        draftResult.value = content
+        draftLoading.value = false
+        draftAbort?.abort()
+      },
+      onError: (message, code) => {
+        draftLoading.value = false
+        if (code === 'LLM_TIMEOUT') ElMessage.error('建议生成超时，请重试')
+        else if (code === 'EMPTY_OUTPUT') ElMessage.warning('建议为空，请换个片段试试')
+        else ElMessage.error(message)
+      }
+    })
+  } catch (err) {
+    if (err?.name !== 'AbortError' && err?.name !== 'CanceledError') {
+      ElMessage.error(err?.message || '建议生成失败，请重试')
+    }
+  } finally {
+    draftLoading.value = false
+  }
+}
+
+function findQuote(text, quote) {
+  const q = (quote || '').trim()
+  if (!q || !text) return -1
+  const idx = text.indexOf(q)
+  if (idx >= 0 && text.indexOf(q, idx + 1) === -1) return idx
+  return -1
+}
+
+function applyDraftSelectionSuggestion() {
+  const snapshot = draftSelection.value
+  const replacement = draftResult.value.trim()
+  if (!snapshot || !replacement) return
+  const text = outputMd.value
+  let start = snapshot.start
+  if (text.slice(start, start + snapshot.selectedText.length) !== snapshot.selectedText) {
+    start = findQuote(text, snapshot.selectedText)
+    if (start < 0) {
+      ElMessage.warning('原文已修改，请重新选中后再试')
+      return
+    }
+  }
+  outputMd.value = text.slice(0, start) + replacement
+    + text.slice(start + snapshot.selectedText.length)
+  ElMessage.success('已替换选中内容')
+  draftSelection.value = null
+  draftResult.value = ''
+}
+
+// ---------- 初稿全文建议 ----------
+const reviewLoading = ref(false)
+const reviewSuggestions = ref([])
+
+async function reviewDraft() {
+  if (reviewLoading.value) return
+  const content = outputMd.value.trim()
+  if (!content) {
+    ElMessage.warning('初稿为空，无需审阅')
+    return
+  }
+  if (content.length > 20000) {
+    ElMessage.warning('初稿超过 20000 字，请分段审阅')
+    return
+  }
+  reviewLoading.value = true
+  const snapshot = outputMd.value
+  try {
+    const data = await aiReview({ title: title.value || undefined, content: snapshot })
+    const items = (data?.suggestions || []).map((item) => ({
+      ...item,
+      found: findQuote(snapshot, item.quote) >= 0
+    }))
+    reviewSuggestions.value = items
+    if (!items.length) ElMessage.info('审阅完成：暂未发现需要调整的地方')
+    else ElMessage.success(`审阅完成：${items.length} 条建议`)
+  } catch {
+    /* request 拦截器已统一提示错误 */
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+async function locateDraftSuggestion(index) {
+  const item = reviewSuggestions.value[index]
+  if (!item) return
+  const idx = findQuote(outputMd.value, item.quote)
+  if (idx < 0) {
+    item.found = false
+    ElMessage.warning('原文已修改，本条无法定位')
+    return
+  }
+  if (!editing.value) editing.value = true
+  await nextTick()
+  const el = textareaEl()
+  if (!el) return
+  el.focus()
+  el.setSelectionRange(idx, idx + item.quote.length)
+  draftSelection.value = { start: idx, end: idx + item.quote.length, selectedText: item.quote }
+}
+
+function applyDraftSuggestion(index) {
+  const item = reviewSuggestions.value[index]
+  if (!item?.replacement) return
+  const idx = findQuote(outputMd.value, item.quote)
+  if (idx < 0) {
+    item.found = false
+    ElMessage.warning('原文已修改，请重新审阅')
+    return
+  }
+  outputMd.value = outputMd.value.slice(0, idx) + item.replacement
+    + outputMd.value.slice(idx + item.quote.length)
+  ElMessage.success('已替换')
+  reviewSuggestions.value.splice(index, 1)
+}
+
+function ignoreDraftSuggestion(index) {
+  reviewSuggestions.value.splice(index, 1)
+}
+
 const canGenerate = computed(() =>
   !!emotion.value.trim() || !!recentState.value.trim())
 
@@ -132,6 +394,7 @@ const renderedOutput = computed(() => {
 
 onBeforeUnmount(() => {
   if (abortController) abortController.abort()
+  if (draftAbort) draftAbort.abort()
 })
 
 // ---------- 图片上传 ----------
@@ -372,6 +635,61 @@ async function saveDraft() {
 .result-actions {
   display: flex;
   gap: 6px;
+}
+
+/* ---------- 初稿编辑 / 划词建议 ---------- */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.draft-editor :deep(.el-textarea__inner) {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.9;
+  background: var(--paper-deep);
+  color: var(--ink);
+  border-radius: 2px;
+}
+.selection-bar {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.selection-bar-label {
+  margin-right: auto;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+}
+.pane-caption {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.pane-mode {
+  color: var(--cinnabar);
+}
+.pane-quote {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--cinnabar);
+  background: var(--paper-deep);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.review-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 @media (max-width: 900px) {

@@ -42,6 +42,9 @@ public class AiProperties {
     /** P1 语义搜索读超时（独立于生成的 120s，避免用户久等） */
     private int searchReadTimeoutMs = 10000;
 
+    /** 全文审阅读超时：非流式返回结构化建议，独立于生成的 120s */
+    private int reviewReadTimeoutMs = 60000;
+
     /** P1 语义搜索结果条数上限 */
     private int searchMaxTopK = 20;
 

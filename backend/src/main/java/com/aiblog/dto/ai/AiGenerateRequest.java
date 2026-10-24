@@ -12,7 +12,7 @@ import java.util.Map;
 @Data
 public class AiGenerateRequest {
 
-    /** outline / draft / continue / expand / condense / rewrite / polish / prose */
+    /** outline / draft / continue / expand / condense / rewrite / polish / prose / suggest */
     @NotBlank(message = "task 不能为空")
     private String task;
 
@@ -31,6 +31,8 @@ public class AiGenerateRequest {
         private String emotion;
         /** 散文任务（prose）：用户近况描述，<= 1000 */
         private String recentState;
+        /** 划词建议（suggest）：advice / polish / rewrite / expand / condense */
+        private String suggestionMode;
     }
 
     @Data
@@ -41,6 +43,12 @@ public class AiGenerateRequest {
         private String originalText;
         /** <= 2000，用户附加自由指令 */
         private String instruction;
+        /** 划词建议（suggest）：选中片段，<= 2000 */
+        private String selectedText;
+        /** 划词建议（suggest）：选区前文，<= 300 */
+        private String textBefore;
+        /** 划词建议（suggest）：选区后文，<= 300 */
+        private String textAfter;
         /** 散文任务（prose）：1-5 张图片，站内 /uploads/** 相对路径或同源绝对地址 */
         private List<String> imageUrls;
     }
@@ -56,6 +64,7 @@ public class AiGenerateRequest {
         if (params.getTargetReader() != null) m.put("target_reader", params.getTargetReader());
         if (params.getEmotion() != null) m.put("emotion", params.getEmotion());
         if (params.getRecentState() != null) m.put("recent_state", params.getRecentState());
+        if (params.getSuggestionMode() != null) m.put("suggestion_mode", params.getSuggestionMode());
         return m;
     }
 
@@ -64,6 +73,9 @@ public class AiGenerateRequest {
         m.put("outline", context == null ? "" : context.getOutline());
         m.put("original_text", context == null ? "" : context.getOriginalText());
         m.put("instruction", context == null ? "" : context.getInstruction());
+        m.put("selected_text", context == null ? "" : context.getSelectedText());
+        m.put("text_before", context == null ? "" : context.getTextBefore());
+        m.put("text_after", context == null ? "" : context.getTextAfter());
         m.put("image_urls", context == null || context.getImageUrls() == null
                 ? List.of() : context.getImageUrls());
         return m;

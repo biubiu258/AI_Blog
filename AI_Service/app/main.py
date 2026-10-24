@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app.api import care, generate, health, search, vectors
+from app.api import care, generate, health, review, search, vectors
 from app.core.config import SERVICE_VERSION, get_settings
 from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
@@ -22,6 +22,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/v1")
     app.include_router(generate.router, prefix="/v1")
+    app.include_router(review.router, prefix="/v1")
     app.include_router(care.router, prefix="/v1")
     app.include_router(search.router, prefix="/v1")
     app.include_router(vectors.router, prefix="/v1")

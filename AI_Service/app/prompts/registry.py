@@ -1,7 +1,7 @@
 """PromptSpec 注册表：任务、模板、温度与输出上限的唯一来源。"""
 from dataclasses import dataclass
 
-PROMPT_VERSION = "2026.10.3"
+PROMPT_VERSION = "2026.10.4"
 
 LUXUN_STYLES = {"luxun", "luxun-prose", "鲁迅", "鲁迅风格"}
 
@@ -33,6 +33,7 @@ _SPECS: dict[str, PromptSpec] = {
     "prose_plain": PromptSpec(
         "prose", "prose.plain.system.j2", "prose.user.j2", 0.7, 8192
     ),
+    "suggest": PromptSpec("suggest", "suggest.system.j2", "suggest.user.j2", 0.4, 1600),
 }
 
 

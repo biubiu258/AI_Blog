@@ -36,6 +36,7 @@ class Plan:
     requires_h1: bool = False
     expected_title: str | None = None
     mode: str = "single"
+    strip_meta: bool = True
     extra: dict = field(default_factory=dict)
 
 
@@ -66,6 +67,13 @@ def _base_vars(req: GenerateRequest) -> dict:
         "length_text": "",
         "style_card": "",
         "image_note": "",
+        # 划词建议专用
+        "selected_text": c.selected_text or "",
+        "text_before": c.text_before or "",
+        "text_after": c.text_after or "",
+        "suggestion_mode": "advice",
+        "mode_label": "",
+        "length_hint": "",
     }
 
 
@@ -96,6 +104,9 @@ def build_plan(req: GenerateRequest, settings: Settings,
 
     if task == "prose":
         return _build_prose_plan(req, settings, variables, image_data_urls or [])
+
+    if task == "suggest":
+        return _build_suggest_plan(req, variables)
 
     raise ValueError(f"未知任务: {task}")
 
@@ -220,3 +231,24 @@ def _build_prose_plan(
         mode="single",
         extra={"genre": decision.genre},
     )
+
+
+_SUGGEST_MODE_META = {
+    "advice": ("给建议", "只给要点，不改写整段"),
+    "polish": ("润色", "长度约为原片段的 0.9–1.1 倍"),
+    "rewrite": ("改写", "长度约为原片段的 0.8–1.3 倍"),
+    "expand": ("扩写", "长度约为原片段的 1.3–2 倍"),
+    "condense": ("缩写", "长度约为原片段的 0.4–0.6 倍"),
+}
+
+
+def _build_suggest_plan(req: GenerateRequest, variables: dict) -> Plan:
+    mode = req.params.suggestion_mode or "advice"
+    label, length_hint = _SUGGEST_MODE_META[mode]
+    variables.update({
+        "suggestion_mode": mode,
+        "mode_label": label,
+        "length_hint": length_hint,
+    })
+    spec = get_spec("suggest")
+    return Plan("suggest", [_single_step(spec, variables)], mode="single", strip_meta=False)

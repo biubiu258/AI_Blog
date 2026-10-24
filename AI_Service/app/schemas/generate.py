@@ -5,8 +5,10 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, model_validator
 
 TaskName = Literal[
-    "outline", "draft", "continue", "expand", "condense", "rewrite", "polish", "prose"
+    "outline", "draft", "continue", "expand", "condense", "rewrite", "polish", "prose",
+    "suggest",
 ]
+SuggestionMode = Literal["advice", "polish", "rewrite", "expand", "condense"]
 
 MAX_TOPIC = 200
 MAX_INSTRUCTION = 2000
@@ -15,6 +17,8 @@ MAX_ORIGINAL_TEXT = 100000
 MAX_EMOTION = 200
 MAX_RECENT_STATE = 1000
 MAX_IMAGES = 5
+MAX_SELECTED_TEXT = 2000
+MAX_TEXT_CONTEXT = 300
 
 
 class GenerateParams(BaseModel):
@@ -25,12 +29,18 @@ class GenerateParams(BaseModel):
     # 散文任务专用
     emotion: str | None = Field(default=None, max_length=MAX_EMOTION)
     recent_state: str | None = Field(default=None, max_length=MAX_RECENT_STATE)
+    # 划词建议专用；缺省按 advice 处理
+    suggestion_mode: SuggestionMode | None = None
 
 
 class GenerateContext(BaseModel):
     outline: str | None = Field(default=None, max_length=MAX_OUTLINE)
     original_text: str | None = Field(default=None, max_length=MAX_ORIGINAL_TEXT)
     instruction: str | None = Field(default=None, max_length=MAX_INSTRUCTION)
+    # 划词建议专用：选中片段 + 前后文，避免模型脱离语境
+    selected_text: str | None = Field(default=None, max_length=MAX_SELECTED_TEXT)
+    text_before: str | None = Field(default=None, max_length=MAX_TEXT_CONTEXT)
+    text_after: str | None = Field(default=None, max_length=MAX_TEXT_CONTEXT)
     # 散文任务 0-5 张绝对 URL（Java 已拼成 publicBaseUrl + /uploads/**）
     image_urls: list[str] = Field(default_factory=list)
 
@@ -67,6 +77,8 @@ class GenerateRequest(BaseModel):
                 raise ValueError(f"prose 任务 image_urls 最多 {MAX_IMAGES} 张")
             if not (_has_text(p.emotion) or _has_text(p.recent_state)):
                 raise ValueError("prose 任务 params.emotion 与 params.recent_state 至少填其一")
+        if self.task == "suggest" and not _has_text(c.selected_text):
+            raise ValueError("suggest 任务需要 context.selected_text")
         for url in c.image_urls:
             scheme = urlparse(url).scheme.lower()
             if scheme not in ("http", "https", "data"):

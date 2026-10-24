@@ -40,69 +40,133 @@
             </div>
           </template>
 
-          <el-form label-position="top" class="ai-form" label-width="auto">
-            <el-form-item label="任务">
-              <el-select v-model="ai.task" @change="onTaskChange">
-                <el-option v-for="t in taskOptions" :key="t.value" :label="t.label" :value="t.value" />
-              </el-select>
-            </el-form-item>
+          <el-tabs v-model="aiTab" class="ai-tabs">
+            <el-tab-pane label="生成" name="generate">
+              <el-form label-position="top" class="ai-form" label-width="auto">
+                <el-form-item label="任务">
+                  <el-select v-model="ai.task" @change="onTaskChange">
+                    <el-option v-for="t in taskOptions" :key="t.value" :label="t.label" :value="t.value" />
+                  </el-select>
+                </el-form-item>
 
-            <el-form-item v-if="needsTopic" label="主题（必填）">
-              <el-input v-model="ai.topic" maxlength="200" placeholder="如：Spring Boot 入门" />
-            </el-form-item>
-            <el-form-item v-if="ai.task !== 'condense' && ai.task !== 'polish'" label="文章类型">
-              <el-input v-model="ai.articleType" maxlength="100" placeholder="如：技术教程" />
-            </el-form-item>
-            <el-form-item v-if="['outline', 'draft', 'expand', 'rewrite'].includes(ai.task)"
-                          label="写作风格">
-              <el-input v-model="ai.style" maxlength="200" placeholder="如：口语化、面向初学者" />
-            </el-form-item>
-            <el-form-item v-if="['outline', 'draft', 'rewrite'].includes(ai.task)"
-                          label="目标读者">
-              <el-input v-model="ai.targetReader" maxlength="200" placeholder="如：有一点 Java 基础的学生" />
-            </el-form-item>
+                <el-form-item v-if="needsTopic" label="主题（必填）">
+                  <el-input v-model="ai.topic" maxlength="200" placeholder="如：Spring Boot 入门" />
+                </el-form-item>
+                <el-form-item v-if="ai.task !== 'condense' && ai.task !== 'polish'" label="文章类型">
+                  <el-input v-model="ai.articleType" maxlength="100" placeholder="如：技术教程" />
+                </el-form-item>
+                <el-form-item v-if="['outline', 'draft', 'expand', 'rewrite'].includes(ai.task)"
+                              label="写作风格">
+                  <el-input v-model="ai.style" maxlength="200" placeholder="如：口语化、面向初学者" />
+                </el-form-item>
+                <el-form-item v-if="['outline', 'draft', 'rewrite'].includes(ai.task)"
+                              label="目标读者">
+                  <el-input v-model="ai.targetReader" maxlength="200"
+                            placeholder="如：有一点 Java 基础的学生" />
+                </el-form-item>
 
-            <el-form-item v-if="ai.task === 'draft'" label="大纲（必填）">
-              <el-input v-model="ai.outline" type="textarea" :rows="6"
-                        placeholder="生成正文前需提供已确认的大纲，可由「生成大纲」结果填入" />
-            </el-form-item>
-            <el-form-item v-if="needsOriginalText" label="原文（必填）">
-              <el-input v-model="ai.originalText" type="textarea" :rows="6"
-                        placeholder="续写/扩写/缩写/改写/润色的源文本" />
-            </el-form-item>
-            <el-form-item v-if="ai.task === 'continue' || ai.task === 'expand' || ai.task === 'rewrite'"
-                          label="附加指令">
-              <el-input v-model="ai.instruction" type="textarea" :rows="2" maxlength="2000"
-                        placeholder="对本次生成的自由要求（可选）" />
-            </el-form-item>
+                <el-form-item v-if="ai.task === 'draft'" label="大纲（必填）">
+                  <el-input v-model="ai.outline" type="textarea" :rows="6"
+                            placeholder="生成正文前需提供已确认的大纲，可由「生成大纲」结果填入" />
+                </el-form-item>
+                <el-form-item v-if="needsOriginalText" label="原文（必填）">
+                  <el-input v-model="ai.originalText" type="textarea" :rows="6"
+                            placeholder="续写/扩写/缩写/改写/润色的源文本" />
+                </el-form-item>
+                <el-form-item v-if="ai.task === 'continue' || ai.task === 'expand' || ai.task === 'rewrite'"
+                              label="附加指令">
+                  <el-input v-model="ai.instruction" type="textarea" :rows="2" maxlength="2000"
+                            placeholder="对本次生成的自由要求（可选）" />
+                </el-form-item>
 
-            <div class="ai-actions">
-              <el-button type="primary" :loading="generating" :disabled="generating"
-                         @click="startGenerate">开始生成</el-button>
-              <el-button v-if="generating" type="danger" @click="stopGenerate">停止生成</el-button>
-              <el-button v-if="ai.task === 'draft' && lastResult"
-                         @click="ai.outline = lastResult">将上次结果用作大纲</el-button>
-              <el-button v-if="needsOriginalText && lastResult"
-                         @click="ai.originalText = lastResult">将上次结果用作原文</el-button>
-            </div>
-          </el-form>
+                <div class="ai-actions">
+                  <el-button type="primary" :loading="generating" :disabled="generating"
+                             @click="startGenerate">开始生成</el-button>
+                  <el-button v-if="generating" type="danger" @click="stopGenerate">停止生成</el-button>
+                  <el-button v-if="ai.task === 'draft' && lastResult"
+                             @click="ai.outline = lastResult">将上次结果用作大纲</el-button>
+                  <el-button v-if="needsOriginalText && lastResult"
+                             @click="ai.originalText = lastResult">将上次结果用作原文</el-button>
+                </div>
+              </el-form>
 
-          <el-divider v-if="outputMd || generating" content-position="left">生成结果</el-divider>
-          <div v-if="generating" class="stream-tip">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            正在生成，已接收 {{ outputMd.length }} 字…
-          </div>
-          <!-- 流式 Markdown 渲染（打字机效果来自逐帧 delta） -->
-          <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
+              <el-divider v-if="outputMd || generating" content-position="left">生成结果</el-divider>
+              <div v-if="generating" class="stream-tip">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                正在生成，已接收 {{ outputMd.length }} 字…
+              </div>
+              <!-- 流式 Markdown 渲染（打字机效果来自逐帧 delta） -->
+              <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
 
-          <div v-if="!generating && outputMd" class="result-actions">
-            <el-button size="small" @click="appendResultToEditor">插入编辑器末尾</el-button>
-            <el-button size="small" type="primary" @click="replaceEditor">替换编辑器内容</el-button>
-            <el-button size="small" @click="copyResult">复制</el-button>
-          </div>
+              <div v-if="!generating && outputMd" class="result-actions">
+                <el-button size="small" @click="appendResultToEditor">插入编辑器末尾</el-button>
+                <el-button size="small" type="primary" @click="replaceEditor">替换编辑器内容</el-button>
+                <el-button size="small" @click="copyResult">复制</el-button>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane name="selection">
+              <template #label>
+                <span>片段建议</span>
+                <span v-if="selectionLoading || selectionResult" class="tab-dot" />
+              </template>
+              <div class="selection-pane">
+                <el-empty v-if="!selectionSnapshot" :image-size="56"
+                          description="在正文中选中一段文字，再点浮层里的「给建议 / 润色 / 改写」" />
+                <template v-else>
+                  <div class="pane-caption">
+                    <span class="pane-mode">{{ selectionModeLabel }}</span>
+                    <span>{{ selectionSnapshot.selectedText.length }} 字</span>
+                  </div>
+                  <blockquote class="pane-quote">{{ selectionSnapshot.selectedText }}</blockquote>
+                  <div v-if="selectionLoading" class="stream-tip">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                    正在生成建议，已接收 {{ selectionResult.length }} 字…
+                  </div>
+                  <div v-if="selectionResult" class="markdown-body result-body"
+                       v-html="renderMarkdown(selectionResult)"></div>
+                  <div v-if="!selectionLoading && selectionResult" class="result-actions">
+                    <el-button v-if="selectionMode !== 'advice'" size="small" type="primary"
+                               @click="applySelectionSuggestion">替换选中</el-button>
+                    <el-button size="small" @click="copySelectionResult">复制</el-button>
+                    <el-button size="small" @click="clearSelectionResult">清除</el-button>
+                  </div>
+                  <div v-if="selectionMode === 'advice' && !selectionLoading && selectionResult"
+                       class="hint">
+                    建议仅供参照，不会改动正文
+                  </div>
+                </template>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane name="review">
+              <template #label>
+                <span>全文建议</span>
+                <span v-if="reviewSuggestions.length" class="tab-dot" />
+              </template>
+              <div class="review-pane">
+                <div class="review-actions">
+                  <el-button size="small" type="primary" :loading="reviewLoading"
+                             :disabled="reviewLoading" @click="reviewFullText(false)">审阅全文</el-button>
+                  <el-switch v-model="autoReview" size="small" inline-prompt
+                             active-text="自动" inactive-text="手动" />
+                </div>
+                <div class="hint">
+                  停笔 8 秒且内容有变化时自动审阅；建议只做定位，点「替换」才会写入正文
+                </div>
+                <AiSuggestionPanel :suggestions="reviewSuggestions" :loading="reviewLoading"
+                                   empty-text="暂无建议，点击「审阅全文」开始"
+                                   @locate="locateSuggestion" @apply="applySuggestion"
+                                   @ignore="ignoreSuggestion" />
+              </div>
+            </el-tab-pane>
+          </el-tabs>
         </el-card>
       </el-col>
     </el-row>
+
+    <AiSelectionMenu :visible="selectionMenu.visible" :x="selectionMenu.x" :y="selectionMenu.y"
+                     :loading="selectionLoading" @ask="askSelection" />
   </div>
 </template>
 
@@ -116,7 +180,18 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { articleApi, categoryApi } from '../api'
 import request from '../api/request'
-import { aiGenerate } from '../api/ai'
+import { aiGenerate, aiReview } from '../api/ai'
+import AiSelectionMenu from '../components/AiSelectionMenu.vue'
+import AiSuggestionPanel from '../components/AiSuggestionPanel.vue'
+import {
+  getPlainText,
+  getSelectionInfo,
+  locateQuote,
+  rangeFromOffsets,
+  replaceOffsets,
+  highlightQuotes,
+  clearQuoteHighlights
+} from '../ai/editorAnchor'
 import { emitCare } from '../care/careBus'
 import { useAuthStore } from '../stores/auth'
 
@@ -134,6 +209,7 @@ const editorRef = shallowRef(null)
 const toolbarConfig = { excludeKeys: ['group-video'] }
 const editorConfig = {
   placeholder: '开始写作…（可先用右侧 AI 生成初稿）',
+  onChange: () => onEditorContentChanged(),
   MENU_CONF: {
     uploadImage: {
       async customUpload(file, insertFn) {
@@ -154,11 +230,27 @@ const editorConfig = {
 
 function handleCreated(editor) {
   editorRef.value = editor
+  const container = editor.getEditableContainer?.()
+  container?.addEventListener('mouseup', onEditorSelectionChange)
+  container?.addEventListener('keyup', onEditorSelectionChange)
+  document.addEventListener('mousedown', onDocumentMouseDown)
+}
+
+function onDocumentMouseDown(event) {
+  const target = event.target
+  if (target?.closest?.('.ai-selection-menu')) return
+  const container = editorRef.value?.getEditableContainer?.()
+  if (container && target instanceof Node && container.contains(target)) return
+  selectionMenu.visible = false
 }
 
 onBeforeUnmount(() => {
-  editorRef.value?.destroy()
+  document.removeEventListener('mousedown', onDocumentMouseDown)
+  if (idleTimer) clearTimeout(idleTimer)
   if (abortController) abortController.abort()
+  if (selectionAbort) selectionAbort.abort()
+  clearQuoteHighlights()
+  editorRef.value?.destroy()
 })
 
 // ---------- AI 辅助写作 ----------
@@ -187,6 +279,278 @@ const generating = ref(false)
 const outputMd = ref('')
 const lastResult = ref('')
 let abortController = null
+
+// ---------- 划词问 AI ----------
+const aiTab = ref('generate')
+const selectionMenu = reactive({ visible: false, x: 0, y: 0 })
+const selectionSnapshot = ref(null)
+const selectionMode = ref('advice')
+const selectionLoading = ref(false)
+const selectionResult = ref('')
+let selectionAbort = null
+let suppressSelectionMenu = false
+
+const SELECTION_MODE_LABELS = {
+  advice: 'AI 建议',
+  polish: '润色建议',
+  rewrite: '改写建议',
+  expand: '扩写建议',
+  condense: '缩写建议'
+}
+const selectionModeLabel = computed(() =>
+  SELECTION_MODE_LABELS[selectionMode.value] || 'AI 建议')
+
+function renderMarkdown(md) {
+  try {
+    return DOMPurify.sanitize(marked.parse(md || '', { breaks: true }))
+  } catch {
+    return ''
+  }
+}
+
+function onEditorSelectionChange() {
+  window.setTimeout(() => updateSelectionMenu(), 0)
+}
+
+function currentSelectionRect() {
+  const sel = window.getSelection()
+  if (!sel || !sel.rangeCount) return null
+  const rect = sel.getRangeAt(0).getBoundingClientRect()
+  if (!rect || (!rect.width && !rect.height)) return null
+  return rect
+}
+
+function updateSelectionMenu() {
+  const editor = editorRef.value
+  if (!editor) return
+  if (suppressSelectionMenu) {
+    selectionMenu.visible = false
+    return
+  }
+  const info = getSelectionInfo(editor)
+  if (!info || !info.selectedText.trim() || info.selectedText.length > 2000) {
+    selectionMenu.visible = false
+    return
+  }
+  const rect = currentSelectionRect()
+  if (!rect) {
+    selectionMenu.visible = false
+    return
+  }
+  selectionMenu.x = Math.max(12, Math.min(window.innerWidth - 380, rect.left))
+  selectionMenu.y = rect.top > 64 ? rect.top - 46 : rect.bottom + 10
+  selectionMenu.visible = true
+}
+
+async function askSelection(mode) {
+  const editor = editorRef.value
+  const info = getSelectionInfo(editor)
+  if (!info || !info.selectedText.trim()) {
+    ElMessage.warning('请先在正文中选中一段文字')
+    return
+  }
+  if (info.selectedText.length > 2000) {
+    ElMessage.warning('选中片段请控制在 2000 字以内')
+    return
+  }
+
+  selectionSnapshot.value = info
+  selectionMode.value = mode
+  selectionResult.value = ''
+  selectionMenu.visible = false
+  aiTab.value = 'selection'
+  selectionLoading.value = true
+  selectionAbort?.abort()
+  selectionAbort = new AbortController()
+  try {
+    await aiGenerate({
+      task: 'suggest',
+      params: {
+        suggestionMode: mode,
+        topic: form.title || undefined
+      },
+      context: {
+        selectedText: info.selectedText,
+        textBefore: info.plainText.slice(Math.max(0, info.start - 300), info.start),
+        textAfter: info.plainText.slice(info.end, info.end + 300),
+        instruction: ''
+      }
+    }, {
+      signal: selectionAbort.signal,
+      onDelta: (content) => {
+        selectionResult.value += content
+      },
+      onDone: (content) => {
+        selectionResult.value = content
+        selectionLoading.value = false
+        selectionAbort?.abort()
+      },
+      onError: (message, code) => {
+        selectionLoading.value = false
+        if (code === 'LLM_TIMEOUT') ElMessage.error('建议生成超时，请重试')
+        else if (code === 'EMPTY_OUTPUT') ElMessage.warning('建议为空，请换个片段试试')
+        else ElMessage.error(message)
+      }
+    })
+  } catch (err) {
+    if (err?.name !== 'AbortError' && err?.name !== 'CanceledError') {
+      ElMessage.error(err?.message || '建议生成失败，请重试')
+    }
+  } finally {
+    selectionLoading.value = false
+  }
+}
+
+function applySelectionSuggestion() {
+  const editor = editorRef.value
+  const snapshot = selectionSnapshot.value
+  const replacement = selectionResult.value.trim()
+  if (!editor || !snapshot || !replacement) return
+
+  // 用原文在最新正文中重新定位，避免编辑后偏移漂移
+  const located = locateQuote(getPlainText(editor), snapshot.selectedText)
+  if (!located) {
+    ElMessage.warning('原文已修改，请重新选中后再试')
+    return
+  }
+  if (!replaceOffsets(editor, located.start, located.end, replacement)) {
+    ElMessage.error('替换失败，请重试')
+    return
+  }
+  ElMessage.success('已替换选中内容，可用 Ctrl+Z 撤销')
+  selectionSnapshot.value = null
+  selectionResult.value = ''
+}
+
+async function copySelectionResult() {
+  try {
+    await navigator.clipboard.writeText(selectionResult.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选择复制')
+  }
+}
+
+function clearSelectionResult() {
+  selectionSnapshot.value = null
+  selectionResult.value = ''
+}
+
+// ---------- 全文主动建议 ----------
+const reviewLoading = ref(false)
+const reviewSuggestions = ref([])
+const autoReview = ref(true)
+let idleTimer = null
+let lastReviewedText = ''
+
+function onEditorContentChanged() {
+  selectionMenu.visible = false
+  if (!autoReview.value) return
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = window.setTimeout(() => {
+    const text = getPlainText(editorRef.value)
+    if (!text.trim() || text === lastReviewedText) return
+    reviewFullText(true)
+  }, 8000)
+}
+
+async function reviewFullText(auto = false) {
+  const editor = editorRef.value
+  if (!editor || reviewLoading.value) return
+
+  const content = getPlainText(editor)
+  if (!content.trim()) {
+    if (!auto) ElMessage.warning('正文为空，无需审阅')
+    return
+  }
+  if (content.length > 20000) {
+    if (!auto) ElMessage.warning('正文超过 20000 字，请分段审阅')
+    return
+  }
+
+  reviewLoading.value = true
+  aiTab.value = 'review'
+  const snapshot = content
+  try {
+    const data = await aiReview({
+      title: form.title || undefined,
+      content: snapshot
+    })
+    const items = (data?.suggestions || []).map((item) => ({
+      ...item,
+      found: !!locateQuote(snapshot, item.quote)
+    }))
+    reviewSuggestions.value = items
+    lastReviewedText = snapshot
+    refreshReviewHighlights()
+    if (auto) {
+      if (items.length) ElMessage.success(`全文审阅完成：${items.length} 条建议`)
+    } else if (!items.length) {
+      ElMessage.info('全文审阅完成：暂未发现需要调整的地方')
+    }
+  } catch {
+    /* request 拦截器已统一提示错误 */
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+function refreshReviewHighlights() {
+  const editor = editorRef.value
+  if (!editor) return
+  const text = getPlainText(editor)
+  const ranges = reviewSuggestions.value
+    .map((item) => locateQuote(text, item.quote))
+    .filter(Boolean)
+  if (!ranges.length) clearQuoteHighlights()
+  else highlightQuotes(editor, ranges)
+}
+
+function locateSuggestion(index) {
+  const editor = editorRef.value
+  const item = reviewSuggestions.value[index]
+  if (!editor || !item) return
+  const located = locateQuote(getPlainText(editor), item.quote)
+  if (!located) {
+    item.found = false
+    ElMessage.warning('原文已修改，本条无法定位')
+    return
+  }
+  const range = rangeFromOffsets(editor, located.start, located.end)
+  if (!range) return
+
+  suppressSelectionMenu = true
+  editor.select(range)
+  editor.restoreSelection?.()
+  editor.getEditableContainer?.()?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  window.setTimeout(() => {
+    suppressSelectionMenu = false
+  }, 400)
+}
+
+function applySuggestion(index) {
+  const editor = editorRef.value
+  const item = reviewSuggestions.value[index]
+  if (!editor || !item?.replacement) return
+  const located = locateQuote(getPlainText(editor), item.quote)
+  if (!located) {
+    item.found = false
+    ElMessage.warning('原文已修改，请重新审阅')
+    return
+  }
+  if (!replaceOffsets(editor, located.start, located.end, item.replacement)) {
+    ElMessage.error('替换失败，请重试')
+    return
+  }
+  ElMessage.success('已替换，可用 Ctrl+Z 撤销')
+  reviewSuggestions.value.splice(index, 1)
+  refreshReviewHighlights()
+}
+
+function ignoreSuggestion(index) {
+  reviewSuggestions.value.splice(index, 1)
+  refreshReviewHighlights()
+}
 
 const needsTopic = computed(() => ai.task === 'outline')
 const needsOriginalText = computed(() =>
@@ -508,6 +872,57 @@ onMounted(async () => {
   gap: 6px;
 }
 
+/* ---------- 页签：片段建议 / 全文建议 ---------- */
+.ai-tabs :deep(.el-tabs__header) {
+  margin-bottom: 12px;
+}
+.tab-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--cinnabar);
+  vertical-align: super;
+}
+.selection-pane,
+.review-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pane-caption {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-faint);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.pane-mode {
+  color: var(--cinnabar);
+}
+.pane-quote {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--cinnabar);
+  background: var(--paper-deep);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.hint {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+}
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .write-page :deep(.el-col) {
     width: 100%;
@@ -515,5 +930,14 @@ onMounted(async () => {
     flex: 0 0 100%;
     margin-bottom: 16px;
   }
+}
+</style>
+
+<!-- CSS Custom Highlight API：建议引文的非侵入高亮 -->
+<style>
+::highlight(ai-suggestion) {
+  background: rgba(160, 60, 40, 0.16);
+  text-decoration: underline;
+  text-decoration-color: rgba(160, 60, 40, 0.55);
 }
 </style>
