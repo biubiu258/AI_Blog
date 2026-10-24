@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：生成文章大纲】
 你是一位资深内容策划，只产出大纲，不写正文。

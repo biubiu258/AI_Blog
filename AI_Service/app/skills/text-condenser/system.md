@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：缩写】
 压缩为完整正文，保留关键事实、结论与结构。

@@ -7,7 +7,8 @@ import re
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.llm.base import LLMClient, LLMError, LLMTimeoutError, Usage
-from app.prompts.renderer import build_messages, render
+from app.prompts.registry import get_spec
+from app.prompts.renderer import build_messages
 from app.schemas.review import (
     MAX_QUOTE,
     MAX_REPLACEMENT,
@@ -19,32 +20,27 @@ from app.schemas.review import (
 
 log = logging.getLogger("ai-service.review")
 
-REVIEW_TEMPERATURE = 0.2
-REVIEW_MAX_TOKENS = 1800
 MIN_QUOTE_LEN = 6
 _QUOTE_STRIP_CHARS = " \t\r\n\"'“”‘’「」『』"
 
 
-def _build_messages(req: ReviewRequest) -> list[dict]:
+def _build_messages(req: ReviewRequest, spec) -> list[dict]:
     variables = {
         "title": (req.title or "").strip(),
         "article_type": (req.article_type or "").strip(),
         "content": req.content,
     }
-    return [
-        {"role": "system", "content": render("review.system.j2", {})},
-        {"role": "user", "content": render("review.user.j2", variables)},
-    ]
+    return build_messages(spec, variables)
 
 
-async def _collect(llm: LLMClient, messages: list[dict]) -> tuple[str, Usage]:
+async def _collect(llm: LLMClient, messages: list[dict], spec) -> tuple[str, Usage]:
     settings = get_settings()
     parts: list[str] = []
     usage = Usage()
     try:
         async with asyncio.timeout(settings.llm_total_timeout):
             async for event in llm.stream_chat(
-                messages, temperature=REVIEW_TEMPERATURE, max_tokens=REVIEW_MAX_TOKENS
+                messages, temperature=spec.temperature, max_tokens=spec.max_tokens
             ):
                 if event.kind == "content" and event.text:
                     parts.append(event.text)
@@ -153,8 +149,9 @@ def _parse_suggestions(text: str, content: str) -> list[ReviewSuggestion]:
 
 
 async def review_content(req: ReviewRequest, llm: LLMClient) -> ReviewResponse:
-    messages = _build_messages(req)
-    text, usage = await _collect(llm, messages)
+    spec = get_spec("review")
+    messages = _build_messages(req, spec)
+    text, usage = await _collect(llm, messages, spec)
     suggestions = _parse_suggestions(text, req.content)
     return ReviewResponse(
         suggestions=suggestions,

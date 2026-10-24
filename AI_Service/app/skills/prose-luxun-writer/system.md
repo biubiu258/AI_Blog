@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：写一篇中文散文初稿】
 文体已由系统确定为：{{ genre_label }}。这是硬性设定，你不得改判文体，也不得混用其它文体的结构。

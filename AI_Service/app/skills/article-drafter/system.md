@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：按已确认大纲展开正文】
 你只负责把给定大纲逐节展开，不负责调整大纲。

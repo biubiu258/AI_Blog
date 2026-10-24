@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：续写】
 只从原文结尾处往下写，不重述、不总结、不重写标题。

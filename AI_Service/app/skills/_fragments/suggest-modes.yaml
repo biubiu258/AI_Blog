@@ -1,0 +1,15 @@
+advice:
+  label: 给建议
+  length_hint: 只给要点，不改写整段
+polish:
+  label: 润色
+  length_hint: 长度约为原片段的 0.9–1.1 倍
+rewrite:
+  label: 改写
+  length_hint: 长度约为原片段的 0.8–1.3 倍
+expand:
+  label: 扩写
+  length_hint: 长度约为原片段的 1.3–2 倍
+condense:
+  label: 缩写
+  length_hint: 长度约为原片段的 0.4–0.6 倍

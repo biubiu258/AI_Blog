@@ -1,14 +1,14 @@
 """Jinja2 模板渲染；变量缺失直接报错，避免提示词悄悄少一块。"""
 import logging
-from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateNotFound
 
+from app.prompts.fragments import SKILLS_DIR
 from app.prompts.registry import PromptSpec
 
 log = logging.getLogger("ai-service.prompts")
 
-TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+TEMPLATE_DIR = SKILLS_DIR
 
 _env = Environment(
     loader=FileSystemLoader(str(TEMPLATE_DIR)),

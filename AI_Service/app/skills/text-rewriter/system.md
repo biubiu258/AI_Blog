@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：改写】
 按附加指令改写为完整正文，保留原意与事实。

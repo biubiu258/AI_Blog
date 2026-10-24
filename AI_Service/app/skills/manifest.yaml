@@ -1,0 +1,60 @@
+version: "2026.11.1"
+
+# task → Skill 的唯一注册表；代码只读取这里，不再出现提示词路径。
+tasks:
+  outline:
+    skill: outline-writer
+    temperature: 0.5
+    max_tokens: 2048
+  draft:
+    skill: article-drafter
+    temperature: 0.5
+    max_tokens: 8192
+  draft_section:
+    skill: section-drafter
+    temperature: 0.5
+    max_tokens: 1600
+  continue:
+    skill: text-continuer
+    temperature: 0.6
+    max_tokens: 2048
+  expand:
+    skill: text-expander
+    temperature: 0.5
+    max_tokens: 8192
+  condense:
+    skill: text-condenser
+    temperature: 0.2
+    max_tokens: 4096
+  rewrite:
+    skill: text-rewriter
+    temperature: 0.5
+    max_tokens: 8192
+  polish:
+    skill: text-polisher
+    temperature: 0.2
+    max_tokens: 8192
+  prose:
+    variants:
+      luxun:
+        skill: prose-luxun-writer
+        user: "_shared/prose.user.md"
+        temperature: 0.7
+        max_tokens: 8192
+      plain:
+        skill: prose-plain-writer
+        user: "_shared/prose.user.md"
+        temperature: 0.7
+        max_tokens: 8192
+  suggest:
+    skill: selection-advisor
+    temperature: 0.4
+    max_tokens: 1600
+  review:
+    skill: article-reviewer
+    temperature: 0.2
+    max_tokens: 1800
+  care:
+    skill: care-guardian
+    temperature: 0.0
+    max_tokens: 32

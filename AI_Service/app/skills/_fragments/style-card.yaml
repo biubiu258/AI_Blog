@@ -1,0 +1,28 @@
+sections:
+  summary: 整体基调
+  stable_features: 恒定特征
+  genre_module: "当前文体模块（{label}）"
+  language: 用词
+  syntax: 句法
+  adaptation: 现代题材换算
+  conditional: "条件特征（仅在与本次文体相符时使用）"
+  avoid: 绝对禁止
+
+line_formats:
+  rule: "- {desc}｜写法：{rules}"
+  desc: "- {desc}"
+  rules: "- {rules}"
+  feature: "- {feature}"
+  adaptation: "- {origin} → {modern}"
+  avoid: "- {pattern}：{reason}"
+  conditional: "- {feature}：{condition}"
+
+genre_sections:
+  narrative: 叙事
+  structure: 结构
+  emotion: 情感
+  ending: 结尾
+
+formats:
+  genre_inline: "【{title}】{line}"
+  block: "【{title}】\n{body}"
