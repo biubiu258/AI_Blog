@@ -249,4 +249,4 @@ def test_api_rag_disabled_keeps_contract_shape(client):
 def test_health_reports_rag_disabled(client):
     body = client.get("/v1/health").json()
     assert body["rag"] == {"enabled": False, "ready": False, "documents": 0}
-    assert body["version"].startswith("0.3")
+    assert body["version"].startswith("0.4")

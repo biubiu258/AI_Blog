@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # app/core/config.py → core → app → AI_Service
 SERVICE_DIR = Path(__file__).resolve().parents[2]
 
-SERVICE_VERSION = "0.3.0"
+SERVICE_VERSION = "0.4.0"
 
 DEFAULT_CHROMA_DIR = SERVICE_DIR / "data" / "chroma"
 DEFAULT_EMBEDDING_CACHE = SERVICE_DIR / "data" / "models"

@@ -1,0 +1,78 @@
+adaptation_common:
+  - 细节
+  - 短句
+  - 克制
+  - 情感
+  - 回忆
+
+genres:
+  memoir:
+    label: 回忆性叙事散文
+    length: [800, 1500]
+    rules: genre-rules/memoir.md
+    classifier_keywords: []
+    style_keywords:
+      - 回忆
+      - 童年
+      - 故人
+      - 旧事
+      - 朝花夕拾
+      - 温情
+      - 长辈
+  elegy:
+    label: 悼念性散文
+    length: [1000, 1800]
+    rules: genre-rules/elegy.md
+    classifier_keywords:
+      - 去世
+      - 离世
+      - 病逝
+      - 故去
+      - 永远离开
+      - 永别
+      - 葬礼
+      - 追悼
+      - 悼
+      - 逝
+      - 遗物
+      - 生离死别
+    style_keywords:
+      - 悼
+      - 亡
+      - 悲愤
+      - 哀痛
+      - 纪念
+      - 告别
+      - 逝
+      - 牺牲
+      - 故人
+      - 长辈
+  prose_poem:
+    label: 散文诗（象征性抒情）
+    length: [400, 800]
+    rules: genre-rules/prose-poem.md
+    classifier_keywords:
+      - 孤独
+      - 失眠
+      - 深夜
+      - 夜里
+      - 绝望
+      - 窒息
+      - 压抑
+      - 焦虑
+      - 迷茫
+      - 城市
+      - 灯
+      - 梦
+      - 雨夜
+      - 漂泊
+      - 沉默
+      - 疲惫
+    style_keywords:
+      - 散文诗
+      - 独白
+      - 象征
+      - 意象
+      - 孤独
+      - 沉郁
+      - 抒情

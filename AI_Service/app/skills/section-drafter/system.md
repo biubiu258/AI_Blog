@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：展开大纲中的单个章节】
 系统已固定整篇文章的标题与章节顺序，你只负责当前这一节的正文。

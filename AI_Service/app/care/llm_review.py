@@ -6,6 +6,7 @@ import logging
 import re
 
 from app.llm.base import LLMClient
+from app.prompts.registry import get_spec
 from app.prompts.renderer import PromptError, render
 
 log = logging.getLogger("ai-service.care.llm")
@@ -19,8 +20,9 @@ async def review_level(text: str, llm: LLMClient) -> str | None:
     if not llm.is_configured():
         return None
     try:
-        system = render("care.system.j2", {})
-        user = render("care.user.j2", {"text": text})
+        spec = get_spec("care")
+        system = render(spec.system_template, {})
+        user = render(spec.user_template, {"text": text})
     except PromptError as exc:
         log.warning("关怀提示词渲染失败: %s", exc)
         return None
@@ -29,8 +31,8 @@ async def review_level(text: str, llm: LLMClient) -> str | None:
     stream = llm.stream_chat(
         [{"role": "system", "content": system},
          {"role": "user", "content": user}],
-        temperature=0.0,
-        max_tokens=32,
+        temperature=spec.temperature,
+        max_tokens=spec.max_tokens,
     )
     try:
         async with asyncio.timeout(REVIEW_TIMEOUT):

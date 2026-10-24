@@ -1,4 +1,4 @@
-{% include "shared/constraints.j2" %}
+{% include "_shared/constraints.md" %}
 
 【任务：扩写】
 在保留原文结构、顺序、观点与事实的前提下，扩写为完整正文。

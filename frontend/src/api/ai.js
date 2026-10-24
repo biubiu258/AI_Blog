@@ -1,4 +1,13 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source'
+import request from './request'
+
+/**
+ * 全文审阅（非流式）：返回 { suggestions, usage }。
+ * 服务端审阅读超时默认 60s，这里放宽 axios 超时避免客户端先断开。
+ */
+export function aiReview(data) {
+  return request.post('/ai/review', data, { timeout: 65000 })
+}
 
 /**
  * AI 生成（POST + JSON 接收 SSE，契约 5.4.6）。

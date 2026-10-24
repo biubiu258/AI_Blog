@@ -11,6 +11,7 @@ from app.generation.context import (
     parse_outline,
     tail_text,
 )
+from app.prompts.fragments import format_fragment, load_yaml
 from app.prompts.genre import decide_genre
 from app.prompts.registry import get_spec, is_luxun_style
 from app.prompts.renderer import build_messages
@@ -18,6 +19,10 @@ from app.prompts.styles import build_style_card, load_profile
 from app.schemas.generate import GenerateRequest
 
 log = logging.getLogger("ai-service.handlers")
+
+_PLACEHOLDERS = load_yaml("_fragments/placeholders.yaml")
+_SUGGEST_MODES = load_yaml("_fragments/suggest-modes.yaml")
+_PROSE_NOTES = load_yaml("_fragments/prose-notes.yaml")
 
 
 @dataclass
@@ -36,6 +41,7 @@ class Plan:
     requires_h1: bool = False
     expected_title: str | None = None
     mode: str = "single"
+    strip_meta: bool = True
     extra: dict = field(default_factory=dict)
 
 
@@ -66,6 +72,13 @@ def _base_vars(req: GenerateRequest) -> dict:
         "length_text": "",
         "style_card": "",
         "image_note": "",
+        # 划词建议专用
+        "selected_text": c.selected_text or "",
+        "text_before": c.text_before or "",
+        "text_after": c.text_after or "",
+        "suggestion_mode": "advice",
+        "mode_label": "",
+        "length_hint": "",
     }
 
 
@@ -97,6 +110,9 @@ def build_plan(req: GenerateRequest, settings: Settings,
     if task == "prose":
         return _build_prose_plan(req, settings, variables, image_data_urls or [])
 
+    if task == "suggest":
+        return _build_suggest_plan(req, variables)
+
     raise ValueError(f"未知任务: {task}")
 
 
@@ -126,7 +142,7 @@ def _build_draft_plan(req: GenerateRequest, variables: dict) -> Plan:
     for i, section in enumerate(parsed.sections):
         bullets = "\n".join(
             b if b.startswith(("-", "*")) else f"- {b}" for b in section.bullets
-        ) or "（本节无要点，按章节名自然展开）"
+        ) or _PLACEHOLDERS["section_no_bullets"]
         step_vars = dict(variables)
         step_vars.update({
             "title": title,
@@ -186,10 +202,9 @@ def _build_prose_plan(
         "genre_label": decision.label,
         "genre_rules": decision.rules,
         "length_text": decision.length_text,
-        "image_note": (
-            f"本次附带 {len(image_data_urls)} 张图片，仅作物象与氛围来源。"
-            if image_data_urls
-            else "本次没有图片素材；从文字素材中的具体物象起笔。"
+        "image_note": format_fragment(
+            _PROSE_NOTES["with_images" if image_data_urls else "without_images"],
+            count=len(image_data_urls),
         ),
     })
 
@@ -220,3 +235,15 @@ def _build_prose_plan(
         mode="single",
         extra={"genre": decision.genre},
     )
+
+
+def _build_suggest_plan(req: GenerateRequest, variables: dict) -> Plan:
+    mode = req.params.suggestion_mode or "advice"
+    meta = _SUGGEST_MODES[mode]
+    variables.update({
+        "suggestion_mode": mode,
+        "mode_label": meta["label"],
+        "length_hint": meta["length_hint"],
+    })
+    spec = get_spec("suggest")
+    return Plan("suggest", [_single_step(spec, variables)], mode="single", strip_meta=False)

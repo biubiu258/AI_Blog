@@ -1,5 +1,6 @@
 package com.aiblog.service;
 
+import com.aiblog.ai.PythonErrorTranslator;
 import com.aiblog.ai.PythonResponseException;
 import com.aiblog.ai.SseParser;
 import com.aiblog.common.BusinessException;
@@ -10,8 +11,6 @@ import com.aiblog.entity.UserPreference;
 import com.aiblog.mapper.UserPreferenceMapper;
 import com.aiblog.security.LoginUser;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
@@ -50,7 +49,8 @@ public class AiGatewayService {
 
     /** 契约 5.4.2：task 取值范围固定 */
     private static final Set<String> TASKS = Set.of(
-            "outline", "draft", "continue", "expand", "condense", "rewrite", "polish", "prose");
+            "outline", "draft", "continue", "expand", "condense", "rewrite", "polish", "prose",
+            "suggest");
 
     private static final int MAX_TOPIC = 200;
     private static final int MAX_INSTRUCTION = 2000;
@@ -62,6 +62,12 @@ public class AiGatewayService {
     private static final int MAX_RECENT_STATE = 1000;
     /** 散文任务：图片张数上限 */
     private static final int MAX_IMAGES = 5;
+    /** 划词建议：选中片段上限 */
+    private static final int MAX_SELECTED_TEXT = 2000;
+    /** 划词建议：前后文各 300 字 */
+    private static final int MAX_TEXT_CONTEXT = 300;
+    private static final Set<String> SUGGESTION_MODES = Set.of(
+            "advice", "polish", "rewrite", "expand", "condense");
     /** 只放行站内 /uploads/ 下的图片，避免用户构造地址让 Python 去请求任意主机 */
     private static final java.util.regex.Pattern UPLOAD_PATH =
             java.util.regex.Pattern.compile("^/uploads/[A-Za-z0-9/_.-]+$");
@@ -69,7 +75,7 @@ public class AiGatewayService {
     private final WebClient aiWebClient;
     private final AiProperties properties;
     private final UserPreferenceMapper preferenceMapper;
-    private final ObjectMapper objectMapper;
+    private final PythonErrorTranslator errorTranslator;
 
     public SseEmitter generate(LoginUser user, AiGenerateRequest request) {
         validateForTask(request);
@@ -94,7 +100,7 @@ public class AiGatewayService {
                     .toEntityFlux(DataBuffer.class)
                     .block(java.time.Duration.ofSeconds(properties.getPreStreamWaitSeconds()));
         } catch (PythonResponseException e) {
-            throw translate(e);
+            throw errorTranslator.translate(e, "生成超时，请重试");
         } catch (IllegalStateException e) {
             // block() 超时抛 IllegalStateException
             log.warn("等待 Python 建立流超时: {}", e.getMessage());
@@ -253,6 +259,10 @@ public class AiGatewayService {
             validateProse(params, context);
             return;
         }
+        if ("suggest".equals(task)) {
+            validateSuggest(params, context);
+            return;
+        }
         switch (task) {
             case "outline" -> require(hasText(topic), "生成大纲需要填写主题（topic）");
             case "draft" -> require(hasText(outline), "生成正文需要提供大纲（outline）");
@@ -281,6 +291,21 @@ public class AiGatewayService {
                 "请至少填写情绪或近况，AI 才能贴合你的心境");
     }
 
+    /** 划词建议：必须带选中片段，模式可选但必须在枚举内。 */
+    private void validateSuggest(AiGenerateRequest.Params params, AiGenerateRequest.Context context) {
+        String selectedText = context == null ? null : context.getSelectedText();
+        String textBefore = context == null ? null : context.getTextBefore();
+        String textAfter = context == null ? null : context.getTextAfter();
+        checkLength("selected_text", selectedText, MAX_SELECTED_TEXT);
+        checkLength("text_before", textBefore, MAX_TEXT_CONTEXT);
+        checkLength("text_after", textAfter, MAX_TEXT_CONTEXT);
+
+        require(hasText(selectedText), "请先选中要问 AI 的片段");
+        String mode = params == null ? null : params.getSuggestionMode();
+        require(mode == null || SUGGESTION_MODES.contains(mode),
+                "不支持的划词建议模式: " + mode);
+    }
+
     private boolean isAllowedImageUrl(String url) {
         if (url == null) return false;
         if (UPLOAD_PATH.matcher(url).matches()) return true;
@@ -306,33 +331,6 @@ public class AiGatewayService {
         if (!condition) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, message);
         }
-    }
-
-    /**
-     * Python 错误 -> Java 业务码（契约 5.7.1 / 5.7.2）。
-     * UNAUTHORIZED 属内部配置故障不外传；VECTOR_ERROR 记日志后同样不外传细节。
-     */
-    private BusinessException translate(PythonResponseException e) {
-        String code = null;
-        String message = null;
-        try {
-            JsonNode root = objectMapper.readTree(e.getBody() == null ? "" : e.getBody());
-            JsonNode error = root.path("error");
-            code = error.path("code").asText(null);
-            message = error.path("message").asText(null);
-        } catch (Exception ignored) {
-            // 非 JSON 错误体，按通用错误处理
-        }
-        log.warn("Python 返回错误: http={}, code={}", e.getStatus().value(), code);
-        return switch (code == null ? "" : code) {
-            case "LLM_TIMEOUT" -> new BusinessException(ErrorCode.AI_TIMEOUT,
-                    message == null ? "生成超时，请重试" : message);
-            case "EMPTY_OUTPUT" -> new BusinessException(ErrorCode.AI_EMPTY_OUTPUT,
-                    message == null ? "生成结果为空，请重试" : message);
-            case "INVALID_PARAMS" -> new BusinessException(ErrorCode.PARAM_ERROR,
-                    message == null ? "AI 生成参数不合法" : message);
-            default -> new BusinessException(ErrorCode.AI_SERVICE_ERROR, "AI 服务异常，请稍后重试");
-        };
     }
 
     /**

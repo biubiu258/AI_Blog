@@ -26,11 +26,13 @@ class TextGuard:
         expected_title: str | None = None,
         prefix_limit: int = 200,
         tail_keep: int = 120,
+        strip_meta: bool = True,
     ) -> None:
         self.requires_h1 = requires_h1
         self.expected_title = (expected_title or "").strip() or None
         self.prefix_limit = prefix_limit
         self.tail_keep = tail_keep
+        self.strip_meta = strip_meta
         self.warnings: list[str] = []
         self._buffer = ""
         self._released = False
@@ -80,9 +82,9 @@ class TextGuard:
             self._buffer = ""
             self._released = True
             self._blocked = False
-            return self._emit(_clean_tail(text))
+            return self._emit(_clean_tail(text, strip_meta=self.strip_meta))
 
-        text = _clean_tail(self._buffer)
+        text = _clean_tail(self._buffer, strip_meta=self.strip_meta)
         self._buffer = ""
         return self._emit(text)
 
@@ -131,7 +133,7 @@ class TextGuard:
         return text, ok
 
 
-def _clean_tail(text: str) -> str:
+def _clean_tail(text: str, *, strip_meta: bool = True) -> str:
     text = text.rstrip()
     if not text:
         return ""
@@ -147,7 +149,7 @@ def _clean_tail(text: str) -> str:
         break
 
     for i in range(len(lines) - 1, max(len(lines) - 10, -1), -1):
-        if _META_RE.match(lines[i].strip()):
+        if strip_meta and _META_RE.match(lines[i].strip()):
             lines = lines[:i]
             break
 
