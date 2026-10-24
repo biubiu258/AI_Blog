@@ -26,13 +26,14 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(properties.getSecret().getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generate(Long userId, String username, String role) {
+    public String generate(Long userId, String username, String role, Integer tokenVersion) {
         long now = System.currentTimeMillis();
         long expire = now + properties.getExpireHours() * 3600_000L;
         return Jwts.builder()
                 .subject(username)
                 .claim("uid", userId)
                 .claim("role", role)
+                .claim("tv", tokenVersion == null ? 0 : tokenVersion)
                 .issuedAt(new Date(now))
                 .expiration(new Date(expire))
                 .signWith(key())

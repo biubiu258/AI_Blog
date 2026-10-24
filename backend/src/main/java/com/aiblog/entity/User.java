@@ -38,6 +38,12 @@ public class User {
     /** 封禁截止时间，NULL 表示永久 */
     private LocalDateTime bannedUntil;
 
+    /** 令牌版本：递增使已签发令牌全部失效 */
+    private Integer tokenVersion;
+
+    /** 0 未验证 / 1 已验证（不阻塞登录） */
+    private Integer emailVerified;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

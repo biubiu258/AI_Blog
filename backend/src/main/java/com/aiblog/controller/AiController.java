@@ -7,6 +7,7 @@ import com.aiblog.dto.ai.AiReviewResponse;
 import com.aiblog.security.CurrentUser;
 import com.aiblog.service.AiGatewayService;
 import com.aiblog.service.AiReviewService;
+import com.aiblog.service.AiUsageService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -26,6 +27,7 @@ public class AiController {
 
     private final AiGatewayService aiGatewayService;
     private final AiReviewService aiReviewService;
+    private final AiUsageService aiUsageService;
 
     /**
      * AI 生成（SSE 流式）。流建立前失败返回统一 JSON（2001/2002 等），
@@ -33,6 +35,8 @@ public class AiController {
      */
     @PostMapping(value = "/generate", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter generate(@Valid @RequestBody AiGenerateRequest request) {
+        aiUsageService.checkQuota(CurrentUser.id());
+        aiUsageService.record(CurrentUser.id(), "generate");
         return aiGatewayService.generate(CurrentUser.get(), request);
     }
 
@@ -41,6 +45,18 @@ public class AiController {
      */
     @PostMapping("/review")
     public ApiResponse<AiReviewResponse> review(@Valid @RequestBody AiReviewRequest request) {
+        aiUsageService.checkQuota(CurrentUser.id());
+        aiUsageService.record(CurrentUser.id(), "review");
         return ApiResponse.ok(aiReviewService.review(CurrentUser.get(), request));
     }
+
+    /** 建议被采纳（一键替换后调用），用于统计采纳率 */
+    @PostMapping("/adopt")
+    public ApiResponse<Void> adopt(@RequestBody AdoptRequest request) {
+        aiUsageService.markAdopted(CurrentUser.id(),
+                request.action() == null ? "review" : request.action());
+        return ApiResponse.ok();
+    }
+
+    public record AdoptRequest(String action) {}
 }

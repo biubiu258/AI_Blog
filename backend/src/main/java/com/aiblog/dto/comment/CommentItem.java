@@ -15,18 +15,26 @@ public class CommentItem {
     private String authorNickname;
     private String authorAvatar;
     private String content;
+    private Long parentId;
+    private Long replyToUserId;
+    private String replyToNickname;
     private LocalDateTime createdAt;
 
-    public static CommentItem of(Comment comment, User author) {
+    public static CommentItem of(Comment comment, User author, User replyTo) {
         CommentItem item = new CommentItem();
         item.setId(comment.getId());
         item.setArticleId(comment.getArticleId());
         item.setAuthorId(comment.getAuthorId());
         item.setContent(comment.getContent());
+        item.setParentId(comment.getParentId());
+        item.setReplyToUserId(comment.getReplyToUserId());
         item.setCreatedAt(comment.getCreatedAt());
         if (author != null) {
             item.setAuthorNickname(author.getNickname());
             item.setAuthorAvatar(author.getAvatarUrl());
+        }
+        if (replyTo != null) {
+            item.setReplyToNickname(replyTo.getNickname());
         }
         return item;
     }

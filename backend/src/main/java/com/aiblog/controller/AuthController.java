@@ -9,6 +9,7 @@ import com.aiblog.dto.auth.RegisterRequest;
 import com.aiblog.dto.auth.UserInfoResponse;
 import com.aiblog.security.CaptchaStore;
 import com.aiblog.service.AuthService;
+import com.aiblog.service.EmailService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final EmailService emailService;
     private final CaptchaStore captchaStore;
 
     /** 开发/测试辅助：回显验证码明文，默认关闭；仅自动化测试时以启动参数开启 */
@@ -64,6 +66,38 @@ public class AuthController {
         // JWT 无状态：登出由前端丢弃令牌即可，后端返回成功
         return ApiResponse.ok();
     }
+
+    /** 给当前登录用户的邮箱发送验证码（需登录） */
+    @PostMapping("/email/send-code")
+    public ApiResponse<Map<String, Object>> sendEmailCode() {
+        return ApiResponse.ok(emailService.sendVerifyCode());
+    }
+
+    /** 校验邮箱验证码（需登录，不阻塞登录） */
+    @PostMapping("/email/verify")
+    public ApiResponse<Void> verifyEmail(@RequestBody VerifyEmailRequest request) {
+        emailService.verifyEmail(request.code());
+        return ApiResponse.ok();
+    }
+
+    /** 忘记密码：发送验证码，无论邮箱是否存在都返回已发送 */
+    @PostMapping("/password/reset-code")
+    public ApiResponse<Map<String, Object>> sendResetCode(@RequestBody SendResetRequest request) {
+        return ApiResponse.ok(emailService.sendResetCode(request.email()));
+    }
+
+    /** 使用邮箱验证码重置密码，重置后所有已登录端下线 */
+    @PostMapping("/password/reset")
+    public ApiResponse<Void> resetPassword(@RequestBody ResetPasswordRequest request) {
+        emailService.resetPassword(request.email(), request.code(), request.newPassword());
+        return ApiResponse.ok();
+    }
+
+    public record VerifyEmailRequest(String code) {}
+
+    public record SendResetRequest(String email) {}
+
+    public record ResetPasswordRequest(String email, String code, String newPassword) {}
 
     /** 取真实客户端 IP：优先 X-Forwarded-For 首段（Nginx 场景），否则远端地址 */
     private static String clientIp(HttpServletRequest request) {

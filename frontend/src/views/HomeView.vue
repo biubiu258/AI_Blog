@@ -26,6 +26,14 @@
       </div>
     </header>
 
+    <div v-if="mode === 'keyword' && tags.length" class="tag-filter">
+      <button class="tag-chip" :class="{ active: !query.tagId }" @click="selectTag(null)">全部</button>
+      <button v-for="t in tags" :key="t.id" class="tag-chip"
+              :class="{ active: query.tagId === t.id }" @click="selectTag(t.id)">
+        {{ t.name }}
+      </button>
+    </div>
+
     <el-alert v-if="mode === 'semantic' && degraded" class="degraded-tip" type="info" show-icon
               :closable="false" title="语义检索暂不可用，已按关键词检索" />
 
@@ -42,6 +50,9 @@
             <template v-if="mode === 'keyword'">
               <span class="meta-author">{{ a.authorNickname || '佚名' }}</span>
               <el-tag v-if="a.categoryName" size="small" effect="plain">{{ a.categoryName }}</el-tag>
+              <el-tag v-for="t in a.tags || []" :key="t" size="small" type="info" effect="plain">
+                {{ t }}
+              </el-tag>
               <span class="meta-date">{{ formatDate(a.publishedAt || a.createdAt) }}</span>
             </template>
             <template v-else>
@@ -68,7 +79,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { articleApi, categoryApi, searchApi } from '../api'
+import { articleApi, categoryApi, searchApi, tagApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -76,9 +87,10 @@ const loading = ref(false)
 const items = ref([])
 const total = ref(0)
 const categories = ref([])
+const tags = ref([])
 const mode = ref('keyword')
 const semantic = reactive({ degraded: false, items: [] })
-const query = reactive({ page: 1, size: 10, categoryId: null, keyword: '' })
+const query = reactive({ page: 1, size: 10, categoryId: null, tagId: null, keyword: '' })
 
 const displayItems = computed(() => (mode.value === 'semantic' ? semantic.items : items.value))
 const degraded = computed(() => semantic.degraded)
@@ -91,6 +103,7 @@ async function load(page = query.page) {
       page: query.page,
       size: query.size,
       categoryId: query.categoryId || undefined,
+      tagId: query.tagId || undefined,
       keyword: query.keyword || undefined
     })
     items.value = data.items
@@ -131,6 +144,11 @@ function onModeChange(val) {
   }
 }
 
+function selectTag(id) {
+  query.tagId = id
+  load(1)
+}
+
 function entryIndex(i) {
   return mode.value === 'semantic' ? i + 1 : (query.page - 1) * query.size + i + 1
 }
@@ -153,6 +171,11 @@ onMounted(async () => {
     categories.value = await categoryApi.list()
   } catch {
     categories.value = []
+  }
+  try {
+    tags.value = await tagApi.list()
+  } catch {
+    tags.value = []
   }
 })
 </script>
@@ -179,6 +202,32 @@ onMounted(async () => {
 }
 .degraded-tip {
   margin-bottom: 16px;
+}
+
+.tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.tag-chip {
+  padding: 4px 14px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--hairline-dark);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.tag-chip:hover,
+.tag-chip.active {
+  color: #fff;
+  background: var(--cinnabar);
+  border-color: var(--cinnabar);
 }
 .meta-score {
   color: var(--ink-faint);

@@ -1,0 +1,12 @@
+# 生产环境覆盖：关闭接口文档，仅暴露健康与基本信息
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

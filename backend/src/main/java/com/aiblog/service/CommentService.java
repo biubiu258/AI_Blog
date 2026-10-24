@@ -32,35 +32,67 @@ public class CommentService {
     private final CommentMapper commentMapper;
     private final ArticleMapper articleMapper;
     private final UserMapper userMapper;
+    private final NotificationService notificationService;
 
     public List<CommentItem> listByArticle(Long articleId) {
         mustGetVisibleArticle(articleId);
         List<Comment> comments = commentMapper.selectList(Wrappers.<Comment>lambdaQuery()
                 .eq(Comment::getArticleId, articleId)
-                .orderByDesc(Comment::getCreatedAt));
+                .eq(Comment::getStatus, "approved")
+                .orderByAsc(Comment::getCreatedAt));
         Map<Long, User> authors = comments.isEmpty() ? Map.of()
                 : userMapper.selectBatchIds(comments.stream().map(Comment::getAuthorId)
                         .collect(Collectors.toSet())).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
         return comments.stream()
-                .map(c -> CommentItem.of(c, authors.get(c.getAuthorId())))
+                .map(c -> CommentItem.of(c, authors.get(c.getAuthorId()),
+                        c.getReplyToUserId() == null ? null : authors.get(c.getReplyToUserId())))
                 .toList();
     }
 
     /**
-     * 仅登录用户可评论，且只能评论已发布文章。
+     * 仅登录用户可评论，且只能评论已发布文章；parentId 用于两级回复。
      */
-    public Map<String, Object> create(Long articleId, String content) {
+    public Map<String, Object> create(Long articleId, String content, Long parentId) {
         Article article = mustGetVisibleArticle(articleId);
         if (!"published".equals(article.getStatus())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "文章未发布，无法评论");
         }
+        Long authorId = CurrentUser.id();
+        Long rootId = null;
+        Long replyToUserId = null;
+        if (parentId != null) {
+            Comment parent = commentMapper.selectById(parentId);
+            if (parent == null || !Objects.equals(parent.getArticleId(), articleId)
+                    || !"approved".equals(parent.getStatus())) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "被回复的评论不存在");
+            }
+            // 两级结构：回复的回复仍挂在一级评论下
+            rootId = parent.getParentId() == null ? parent.getId() : parent.getParentId();
+            replyToUserId = parent.getAuthorId();
+        }
         Comment comment = new Comment();
         comment.setArticleId(articleId);
-        comment.setAuthorId(CurrentUser.id());
+        comment.setAuthorId(authorId);
         comment.setContent(content.strip());
+        comment.setParentId(rootId);
+        comment.setReplyToUserId(replyToUserId);
+        comment.setStatus("approved");
         commentMapper.insert(comment);
+
+        if (replyToUserId != null) {
+            notificationService.notify(replyToUserId, "reply", authorId, articleId, comment.getId(),
+                    "回复了你的评论：" + abbreviate(comment.getContent()));
+        }
+        if (!Objects.equals(article.getAuthorId(), authorId)
+                && !Objects.equals(article.getAuthorId(), replyToUserId)) {
+            notificationService.notifyComment(article, authorId, comment.getId(), comment.getContent());
+        }
         return Map.of("id", comment.getId());
+    }
+
+    private static String abbreviate(String text) {
+        return text.length() <= 80 ? text : text.substring(0, 80) + "…";
     }
 
     /**

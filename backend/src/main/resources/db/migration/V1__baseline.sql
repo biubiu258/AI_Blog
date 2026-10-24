@@ -1,8 +1,7 @@
 -- =============================================================
--- 建表脚本 —— 用于已存在的远程数据库（aiblog）
--- 与 schema.sql 的唯一区别：不含 CREATE DATABASE / USE，
--- 因为远程账号通常无建库权限，且库已由管理员创建。
--- 全部为 CREATE TABLE IF NOT EXISTS，可重复执行。
+-- V1 基线：与既有库结构保持一致（数据库 aiblog）
+-- 新库直接执行本脚本；已有库由 Flyway baseline 跳过本版本，
+-- 缺失的列/表由 V2 补齐。
 -- =============================================================
 SET NAMES utf8mb4;
 
@@ -67,7 +66,7 @@ CREATE TABLE IF NOT EXISTS `comment` (
     KEY `idx_comment_article` (`article_id`, `created_at`)
 ) ENGINE = InnoDB COMMENT '评论';
 
--- 用户写作偏好（P1）
+-- 用户写作偏好
 CREATE TABLE IF NOT EXISTS `user_preference` (
     `id`            BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
     `user_id`       BIGINT      NOT NULL COMMENT '用户，唯一外键 -> user',

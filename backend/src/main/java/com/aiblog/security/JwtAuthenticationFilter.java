@@ -38,9 +38,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = tokenProvider.parse(token);
                 Long uid = claims.get("uid", Long.class);
+                Integer tv = claims.get("tv", Integer.class);
                 if (uid != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                     User user = userMapper.selectById(uid);
-                    if (user != null && !user.isBanActive()) {
+                    // tokenVersion 不一致说明密码已重置/被强制下线，令牌立即失效
+                    boolean tokenValid = user != null && (user.getTokenVersion() == null
+                            ? 0 : user.getTokenVersion()) == (tv == null ? 0 : tv);
+                    if (tokenValid && !user.isBanActive()) {
                         if (user.getStatus() != null && user.getStatus() == 1) {
                             // 封禁期限已过：惰性解封，回正状态
                             user.setStatus(0);

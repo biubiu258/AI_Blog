@@ -14,6 +14,7 @@ public class UserInfoResponse {
     private String avatarUrl;
     private String bio;
     private String email;
+    private Integer emailVerified;
     private String role;
     private LocalDateTime createdAt;
 
@@ -25,6 +26,7 @@ public class UserInfoResponse {
         r.setAvatarUrl(user.getAvatarUrl());
         r.setBio(user.getBio());
         r.setEmail(user.getEmail());
+        r.setEmailVerified(user.getEmailVerified() == null ? 0 : user.getEmailVerified());
         r.setRole(user.getRole());
         r.setCreatedAt(user.getCreatedAt());
         return r;

@@ -1,0 +1,72 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-aiblog}
+      MYSQL_DATABASE: aiblog
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  ai:
+    build:
+      context: .
+      dockerfile: AI_Service/Dockerfile
+    environment:
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-dev-internal-token}
+      AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
+      RAG_ENABLED: "false"
+      LUXUN_STYLE_CONFIG: /AI_Service/鲁迅散文风格配置.json
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health')"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: aiblog
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-aiblog}
+      AI_BASE_URL: http://ai:8000
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-dev-internal-token}
+      AI_PUBLIC_BASE_URL: http://backend:8080
+      SITE_BASE_URL: ${SITE_BASE_URL:-http://localhost:8088}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "8088:80"
+
+volumes:
+  mysql-data:
+  uploads:

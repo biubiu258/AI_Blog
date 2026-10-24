@@ -4,14 +4,24 @@ export const authApi = {
   register: (data) => request.post('/auth/register', data),
   login: (data) => request.post('/auth/login', data),
   logout: () => request.post('/auth/logout'),
-  captcha: () => request.get('/auth/captcha')
+  captcha: () => request.get('/auth/captcha'),
+  sendEmailCode: () => request.post('/auth/email/send-code'),
+  verifyEmail: (data) => request.post('/auth/email/verify', data),
+  sendResetCode: (data) => request.post('/auth/password/reset-code', data),
+  resetPassword: (data) => request.post('/auth/password/reset', data)
 }
 
 export const userApi = {
   me: () => request.get('/user/me'),
   updateMe: (data) => request.put('/user/me', data),
   getPreference: () => request.get('/user/preference'),
-  updatePreference: (data) => request.put('/user/preference', data)
+  updatePreference: (data) => request.put('/user/preference', data),
+  profile: (id) => request.get(`/users/${id}`),
+  follow: (id) => request.post(`/users/${id}/follow`),
+  followers: (id) => request.get(`/users/${id}/followers`),
+  following: (id) => request.get(`/users/${id}/following`),
+  articles: (id, params) => request.get(`/users/${id}/articles`, { params }),
+  favorites: (id, params) => request.get(`/users/${id}/favorites`, { params })
 }
 
 export const articleApi = {
@@ -20,7 +30,27 @@ export const articleApi = {
   detail: (id) => request.get(`/articles/${id}`),
   create: (data) => request.post('/articles', data),
   update: (id, data) => request.put(`/articles/${id}`, data),
-  remove: (id) => request.delete(`/articles/${id}`)
+  remove: (id) => request.delete(`/articles/${id}`),
+  like: (id) => request.post(`/articles/${id}/like`),
+  favorite: (id) => request.post(`/articles/${id}/favorite`),
+  view: (id) => request.get(`/articles/${id}/view`),
+  versions: (id) => request.get(`/articles/${id}/versions`),
+  version: (id, versionId) => request.get(`/articles/${id}/versions/${versionId}`)
+}
+
+export const tagApi = {
+  list: () => request.get('/tags'),
+  articles: (id, params) => request.get(`/tags/${id}/articles`, { params })
+}
+
+export const notificationApi = {
+  list: (params) => request.get('/notifications', { params }),
+  unreadCount: () => request.get('/notifications/unread-count'),
+  markRead: (ids) => request.post('/notifications/read', { ids })
+}
+
+export const reportApi = {
+  create: (data) => request.post('/reports', data)
 }
 
 export const searchApi = {
@@ -59,5 +89,9 @@ export const adminApi = {
   listComments: (params) => request.get('/admin/comments', { params }),
   batchDeleteComments: (ids) =>
     request.delete('/admin/comments/batch', { params: { ids: ids.join(',') } }),
+  listReports: (params) => request.get('/admin/reports', { params }),
+  pendingReports: () => request.get('/admin/reports/pending-count'),
+  handleReport: (id, action) => request.put(`/admin/reports/${id}/handle`, { action }),
+  aiUsage: (params) => request.get('/admin/ai/usage', { params }),
   listLogs: (params) => request.get('/admin/logs', { params })
 }

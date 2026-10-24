@@ -180,6 +180,116 @@
         </div>
       </el-tab-pane>
 
+      <!-- 举报处理：超级管理员 / 内容管理员 -->
+      <el-tab-pane label="举报处理" name="reports">
+        <div class="toolbar">
+          <el-radio-group v-model="reportStatus" @change="loadReports(1)">
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="pending">待处理</el-radio-button>
+            <el-radio-button value="handled">已处理</el-radio-button>
+            <el-radio-button value="dismissed">已忽略</el-radio-button>
+          </el-radio-group>
+          <span v-if="pendingReportCount > 0" class="pending-tip">
+            待处理 {{ pendingReportCount }} 条
+          </span>
+        </div>
+        <div class="sheet">
+          <el-table :data="reports" v-loading="loadingReports">
+            <el-table-column prop="id" label="ID" width="64" />
+            <el-table-column label="类型" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">
+                  {{ row.targetType === 'article' ? '文章' : '评论' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="被举报内容" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                <el-link v-if="row.targetType === 'article'" type="primary"
+                         @click="$router.push(`/article/${row.targetId}`)">
+                  {{ row.targetTitle || row.targetId }}
+                </el-link>
+                <span v-else>{{ row.targetTitle || `评论 #${row.targetId}` }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="reason" label="举报理由" min-width="200" show-overflow-tooltip />
+            <el-table-column label="举报人" width="120">
+              <template #default="{ row }">{{ row.reporterNickname || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag v-if="row.status === 'pending'" type="warning" size="small" effect="plain">待处理</el-tag>
+                <el-tag v-else-if="row.status === 'handled'" type="danger" size="small" effect="plain">已处理</el-tag>
+                <el-tag v-else type="info" size="small" effect="plain">已忽略</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="时间" width="160">
+              <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="180" fixed="right">
+              <template #default="{ row }">
+                <template v-if="row.status === 'pending'">
+                  <el-button link type="info" @click="handleReport(row, 'dismiss')">忽略</el-button>
+                  <el-button link type="danger" @click="handleReport(row, 'delete')">删除内容</el-button>
+                </template>
+                <span v-else class="ban-until">-</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div class="pager">
+          <el-pagination background layout="prev, pager, next, total" :total="reportTotal"
+                         :page-size="reportQuery.size" :current-page="reportQuery.page"
+                         @current-change="loadReports" />
+        </div>
+      </el-tab-pane>
+
+      <!-- AI 治理：仅超级管理员 -->
+      <el-tab-pane v-if="isSuper" label="AI 治理" name="ai">
+        <div class="toolbar">
+          <el-select v-model="aiDays" style="width: 140px" @change="loadAiUsage">
+            <el-option label="近 7 天" :value="7" />
+            <el-option label="近 14 天" :value="14" />
+            <el-option label="近 30 天" :value="30" />
+          </el-select>
+          <div class="toolbar-left">
+            <el-tag v-for="(count, action) in aiUsage.byAction || {}" :key="action" effect="plain">
+              {{ aiActionLabel(action) }} {{ count }}
+            </el-tag>
+          </div>
+        </div>
+        <el-row :gutter="16" class="ai-stats">
+          <el-col :span="8">
+            <div class="stat-card">
+              <div class="stat-value">{{ aiUsage.total || 0 }}</div>
+              <div class="stat-label">总调用次数</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="stat-card">
+              <div class="stat-value">{{ aiUsage.adopted || 0 }}</div>
+              <div class="stat-label">建议被采纳</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="stat-card">
+              <div class="stat-value">{{ adoptionRateText }}</div>
+              <div class="stat-label">采纳率</div>
+            </div>
+          </el-col>
+        </el-row>
+        <div class="sheet">
+          <el-table :data="aiUsage.daily || []" v-loading="loadingAiUsage">
+            <el-table-column prop="date" label="日期" width="140" />
+            <el-table-column prop="count" label="调用次数" width="120" />
+            <el-table-column prop="adopted" label="采纳次数" width="120" />
+            <el-table-column label="采纳率" min-width="120">
+              <template #default="{ row }">{{ rateText(row.adopted, row.count) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-tab-pane>
+
       <!-- 操作日志：仅超级管理员 -->
       <el-tab-pane v-if="isSuper" label="操作日志" name="logs">
         <div class="toolbar">
@@ -472,6 +582,74 @@ async function batchDeleteContent() {
   loadContent()
 }
 
+/* ---------- 举报处理 ---------- */
+const reports = ref([])
+const reportTotal = ref(0)
+const reportStatus = ref('pending')
+const loadingReports = ref(false)
+const pendingReportCount = ref(0)
+const reportQuery = reactive({ page: 1, size: 10 })
+
+async function loadReports(page = reportQuery.page) {
+  reportQuery.page = page
+  loadingReports.value = true
+  try {
+    const data = await adminApi.listReports({
+      page: reportQuery.page,
+      size: reportQuery.size,
+      status: reportStatus.value || undefined
+    })
+    reports.value = data.items || []
+    reportTotal.value = data.total || 0
+  } finally {
+    loadingReports.value = false
+  }
+  loadPendingReports()
+}
+
+async function loadPendingReports() {
+  try {
+    const data = await adminApi.pendingReports()
+    pendingReportCount.value = data?.count || 0
+  } catch {
+    pendingReportCount.value = 0
+  }
+}
+
+async function handleReport(row, action) {
+  const verb = action === 'delete' ? '删除被举报内容' : '忽略该举报'
+  await ElMessageBox.confirm(`确定${verb}吗？`, '处理举报', { type: 'warning' })
+  await adminApi.handleReport(row.id, action)
+  ElMessage.success('已处理')
+  loadReports()
+}
+
+/* ---------- AI 治理（仅超级管理员） ---------- */
+const aiDays = ref(14)
+const loadingAiUsage = ref(false)
+const aiUsage = ref({})
+const adoptionRateText = computed(() => rateText(aiUsage.value.adopted, aiUsage.value.total))
+
+function rateText(adopted, total) {
+  if (!total) return '0%'
+  return `${Math.round((adopted || 0) * 100 / total)}%`
+}
+
+function aiActionLabel(action) {
+  return action === 'generate' ? '生成' : action === 'review' ? '审阅' : action
+}
+
+async function loadAiUsage() {
+  loadingAiUsage.value = true
+  try {
+    aiUsage.value = await adminApi.aiUsage({ days: aiDays.value })
+  } catch {
+    aiUsage.value = {}
+  } finally {
+    loadingAiUsage.value = false
+  }
+}
+
 /* ---------- 操作日志（仅超级管理员） ---------- */
 const ACTIONS = [
   { value: 'BAN', label: '封禁' },
@@ -479,7 +657,8 @@ const ACTIONS = [
   { value: 'SET_ROLE', label: '角色调整' },
   { value: 'ARTICLE_UNPUBLISH', label: '文章下架' },
   { value: 'ARTICLE_DELETE', label: '文章删除' },
-  { value: 'COMMENT_DELETE', label: '评论删除' }
+  { value: 'COMMENT_DELETE', label: '评论删除' },
+  { value: 'REPORT_HANDLE', label: '举报处理' }
 ]
 const logs = ref([])
 const logTotal = ref(0)
@@ -529,6 +708,8 @@ function statusLabel(status) {
 watch(activeTab, (tab) => {
   if (tab === 'users') loadUsers(1)
   else if (tab === 'content') loadContent(1)
+  else if (tab === 'reports') loadReports(1)
+  else if (tab === 'ai') loadAiUsage()
   else if (tab === 'logs') loadLogs(1)
 })
 
@@ -563,6 +744,32 @@ onMounted(() => loadCategories())
 .ban-confirm {
   margin: 6px 0;
   line-height: 1.8;
+}
+.pending-tip {
+  color: var(--cinnabar);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.ai-stats {
+  margin-bottom: 18px;
+}
+.stat-card {
+  background: var(--paper-card);
+  border: 1px solid var(--hairline-dark);
+  border-top: 3px solid var(--ink);
+  padding: 18px 20px;
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.stat-label {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
 }
 .pager {
   margin-top: 18px;

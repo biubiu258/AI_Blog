@@ -32,7 +32,8 @@ public class CommentController {
     @PostMapping("/articles/{articleId}/comments")
     public ApiResponse<Map<String, Object>> create(@PathVariable Long articleId,
                                                    @Valid @RequestBody CommentCreateRequest request) {
-        return ApiResponse.ok(commentService.create(articleId, request.getContent()));
+        return ApiResponse.ok(commentService.create(articleId, request.getContent(),
+                request.getParentId()));
     }
 
     @DeleteMapping("/comments/{id}")
