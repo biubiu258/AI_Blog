@@ -9,6 +9,7 @@ import com.aiblog.security.CurrentUser;
 import com.aiblog.service.ArticleService;
 import com.aiblog.service.ArticleVersionService;
 import com.aiblog.service.InteractionService;
+import com.aiblog.service.StatsService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class ArticleController {
     private final ArticleService articleService;
     private final InteractionService interactionService;
     private final ArticleVersionService articleVersionService;
+    private final StatsService statsService;
 
     /** 公开列表：仅已发布，支持分类、标签与关键词筛选 */
     @GetMapping
@@ -52,6 +54,14 @@ public class ArticleController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status) {
         return ApiResponse.ok(articleService.pageMine(page, size, status));
+    }
+
+    /** 热门排行：week / month / all，阅读、点赞、收藏加权 */
+    @GetMapping("/hot")
+    public ApiResponse<List<Map<String, Object>>> hot(
+            @RequestParam(defaultValue = "week") String range,
+            @RequestParam(defaultValue = "10") int limit) {
+        return ApiResponse.ok(statsService.hotArticles(range, limit));
     }
 
     /** 详情：已发布公开可读，草稿仅作者/管理员（越权 1003） */

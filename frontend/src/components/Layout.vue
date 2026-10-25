@@ -14,6 +14,10 @@
           <router-link to="/" class="nav-item" :class="{ active: activeMenu === '/' }">
             首页
           </router-link>
+          <router-link to="/ranking" class="nav-item"
+                       :class="{ active: activeMenu === '/ranking' }">
+            排行
+          </router-link>
           <router-link v-if="auth.isLoggedIn" to="/write" class="nav-item"
                        :class="{ active: activeMenu === '/write' }">
             写作
@@ -50,6 +54,7 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                  <el-dropdown-item command="dashboard">创作数据</el-dropdown-item>
                   <el-dropdown-item command="my">我的文章</el-dropdown-item>
                   <el-dropdown-item v-if="auth.isAdminLike" command="admin">管理后台</el-dropdown-item>
                   <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>

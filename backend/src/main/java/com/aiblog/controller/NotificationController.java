@@ -28,8 +28,9 @@ public class NotificationController {
     public ApiResponse<Map<String, Object>> page(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "false") boolean unreadOnly) {
-        return ApiResponse.ok(notificationService.page(CurrentUser.id(), page, size, unreadOnly));
+            @RequestParam(defaultValue = "false") boolean unreadOnly,
+            @RequestParam(required = false) String type) {
+        return ApiResponse.ok(notificationService.page(CurrentUser.id(), page, size, unreadOnly, type));
     }
 
     @GetMapping("/unread-count")
