@@ -123,9 +123,9 @@ async def generate_stream(
 
     genre = plan.extra.get("genre", "-")
     log.info(
-        "生成完成 task=%s mode=%s genre=%s prompt_version=%s duration_ms=%d "
+        "生成完成 task=%s trace_id=%s mode=%s genre=%s prompt_version=%s duration_ms=%d "
         "prompt_tokens=%d completion_tokens=%d warnings=%s",
-        req.task, plan.mode, genre, PROMPT_VERSION,
+        req.task, req.trace_id or "-", plan.mode, genre, PROMPT_VERSION,
         int((time.monotonic() - started) * 1000),
         usage.prompt_tokens, usage.completion_tokens,
         "；".join(stats.warnings) or "无",
@@ -135,7 +135,14 @@ async def generate_stream(
         _check_verbatim(text, settings.style_config_path)
     _check_length(req.task, req.context.original_text, text)
 
-    yield sse("done", {"content": text, "usage": usage.as_dict()})
+    # done 帧同时回传模型与提示词版本，供 Java 写入 ai_output 审计
+    model_name = "mock" if settings.mock_mode else settings.llm_model
+    yield sse("done", {
+        "content": text,
+        "usage": usage.as_dict(),
+        "model": model_name,
+        "prompt_version": PROMPT_VERSION,
+    })
 
 
 _LENGTH_RATIOS = {

@@ -1,10 +1,12 @@
 """检索与向量同步接口接入 RAG 服务（契约 5.5）。"""
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_rag_service, verify_internal_token
 from app.core.errors import AppError
+from app.core.logging import set_request_id
 from app.rag.service import RagError, RagService
 from app.schemas.search import Hit, RetrieveRequest, SearchRequest, SearchResponse
 
@@ -30,11 +32,15 @@ async def search(
     req: SearchRequest,
     rag: RagService = Depends(get_rag_service),
 ) -> SearchResponse:
+    set_request_id(req.trace_id or uuid.uuid4().hex[:8])
     try:
         hits = await rag.search(req.query, req.top_k)
     except RagError as exc:
         raise AppError("VECTOR_ERROR", "向量检索暂不可用，请稍后重试") from exc
-    log.info("search top_k=%d hits=%d rag=%s", req.top_k, len(hits), rag.enabled)
+    log.info(
+        "search trace_id=%s top_k=%d hits=%d rag=%s",
+        req.trace_id or "-", req.top_k, len(hits), rag.enabled,
+    )
     return _to_response(hits)
 
 

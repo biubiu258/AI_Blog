@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -42,17 +43,40 @@ public class SearchService {
     private final AiProperties properties;
     private final ArticleMapper articleMapper;
     private final ObjectMapper objectMapper;
+    private final AiAuditService auditService;
 
     public AiSearchResponse search(String query, Integer topK) {
         String q = query == null ? "" : query.trim();
         int limit = clampTopK(topK);
         Long userId = CurrentUser.id();
 
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("trace_id", traceId);
+        request.put("query", q);
+        request.put("top_k", limit);
+        Long auditId = auditService.begin(traceId, userId, null, "search", null, request);
+        long startedAt = System.nanoTime();
+
         SemanticResult semantic = semanticHits(q, limit);
         List<SearchItem> semanticItems = buildSemanticItems(semantic.hits(), userId);
         List<SearchItem> keywordItems = buildKeywordItems(q, userId, limit);
+        AiSearchResponse response =
+                new AiSearchResponse(semantic.degraded(), assemble(semanticItems, keywordItems, limit));
 
-        return new AiSearchResponse(semantic.degraded(), assemble(semanticItems, keywordItems, limit));
+        // 语义命中/降级后关键词结果都是 AI 通道的返回，全部留存
+        auditService.finish(auditId, AiAuditService.AiResult.success(
+                toJson(response), semantic.degraded() ? "fallback" : "python",
+                0, 0, (System.nanoTime() - startedAt) / 1_000_000L, null, null));
+        return response;
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            return String.valueOf(value);
+        }
     }
 
     /** 通道一：转发 Python /v1/search；异常/超时/非法响应一律降级（degraded=true）。 */

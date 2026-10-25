@@ -490,6 +490,7 @@ async function askSelection(mode) {
   try {
     await aiGenerate({
       task: 'suggest',
+      articleId: articleId.value || undefined,
       params: {
         suggestionMode: mode,
         topic: form.title || undefined
@@ -700,6 +701,8 @@ function buildPayload() {
   // 前端 → Java 用 camelCase（后端 DTO 字段名），Java → Python 才转成 snake_case
   return {
     task: ai.task,
+    // 当前编辑文章 id：供 AI 输出审计溯源到具体文章
+    articleId: articleId.value || undefined,
     params: {
       topic: ai.topic || undefined,
       articleType: ai.articleType || undefined,

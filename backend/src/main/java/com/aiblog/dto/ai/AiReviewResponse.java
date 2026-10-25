@@ -14,4 +14,7 @@ public class AiReviewResponse {
     private List<AiSuggestion> suggestions = List.of();
 
     private Map<String, Integer> usage;
+
+    /** 本次审阅的追踪号，便于与 ai_output 审计记录对齐 */
+    private String traceId;
 }

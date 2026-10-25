@@ -56,6 +56,9 @@ def _has_text(value: str | None) -> bool:
 
 class GenerateRequest(BaseModel):
     user_id: int = Field(gt=0)
+    # Java 生成的调用追踪号，用于与 ai_output 审计记录对齐
+    trace_id: str | None = None
+    article_id: int | None = None
     task: TaskName
     params: GenerateParams = Field(default_factory=GenerateParams)
     context: GenerateContext = Field(default_factory=GenerateContext)

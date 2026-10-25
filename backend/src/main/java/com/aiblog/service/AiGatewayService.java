@@ -1,5 +1,6 @@
 package com.aiblog.service;
 
+import com.aiblog.ai.AiStreamRecorder;
 import com.aiblog.ai.PythonErrorTranslator;
 import com.aiblog.ai.PythonResponseException;
 import com.aiblog.ai.SseParser;
@@ -11,6 +12,7 @@ import com.aiblog.entity.UserPreference;
 import com.aiblog.mapper.UserPreferenceMapper;
 import com.aiblog.security.LoginUser;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
@@ -36,7 +38,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * AI 网关：鉴权后把生成请求转发 Python（/v1/generate），逐帧透传 SSE，
@@ -76,10 +81,17 @@ public class AiGatewayService {
     private final AiProperties properties;
     private final UserPreferenceMapper preferenceMapper;
     private final PythonErrorTranslator errorTranslator;
+    private final AiAuditService auditService;
+    private final ObjectMapper objectMapper;
 
     public SseEmitter generate(LoginUser user, AiGenerateRequest request) {
         validateForTask(request);
-        Map<String, Object> payload = buildPayload(user, request);
+        String traceId = newTraceId();
+        Map<String, Object> payload = buildPayload(user, request, traceId);
+        // 先落审计（status=streaming），即便后续调用失败或进程中断也有调用痕迹
+        Long auditId = auditService.begin(traceId, user.getId(), request.getArticleId(),
+                "generate", request.getTask(), payload);
+        long startedAt = System.nanoTime();
 
         // 等待 Python 返回响应头（body 为流，头到达即完成，不等整流）；
         // 流建立前失败返回普通 JSON（2001/2002），一旦 2xx 把响应体作为流转发给 SseEmitter。
@@ -100,33 +112,52 @@ public class AiGatewayService {
                     .toEntityFlux(DataBuffer.class)
                     .block(java.time.Duration.ofSeconds(properties.getPreStreamWaitSeconds()));
         } catch (PythonResponseException e) {
-            throw errorTranslator.translate(e, "生成超时，请重试");
+            BusinessException translated = errorTranslator.translate(e, "生成超时，请重试");
+            failAudit(auditId, translated, startedAt);
+            throw translated;
         } catch (IllegalStateException e) {
             // block() 超时抛 IllegalStateException
             log.warn("等待 Python 建立流超时: {}", e.getMessage());
-            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, "AI 服务响应超时，请稍后重试");
+            BusinessException translated = new BusinessException(
+                    ErrorCode.AI_SERVICE_ERROR, "AI 服务响应超时，请稍后重试");
+            failAudit(auditId, translated, startedAt);
+            throw translated;
         } catch (Exception e) {
             log.warn("连接 Python AI 服务失败: {}", e.getMessage());
-            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, "AI 服务暂时不可用，请稍后重试");
+            BusinessException translated = new BusinessException(
+                    ErrorCode.AI_SERVICE_ERROR, "AI 服务暂时不可用，请稍后重试");
+            failAudit(auditId, translated, startedAt);
+            throw translated;
         }
         if (upstream == null || upstream.getBody() == null) {
-            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, "AI 服务无响应，请稍后重试");
+            BusinessException translated = new BusinessException(
+                    ErrorCode.AI_SERVICE_ERROR, "AI 服务无响应，请稍后重试");
+            failAudit(auditId, translated, startedAt);
+            throw translated;
         }
 
-        return forwardStream(upstream.getBody());
+        return forwardStream(upstream.getBody(), auditId, startedAt);
     }
 
     /**
      * 把 Python 的 SSE 字节流解析成事件帧，逐帧写入 SseEmitter 并 flush。
-     * 客户端断开（onTimeout/onError/onCompletion）时取消上游连接，避免泄漏。
+     * 同时采集 delta/done/error 帧，流结束或客户端断开时把 AI 返回内容落审计表。
      */
-    private SseEmitter forwardStream(Flux<DataBuffer> body) {
+    private SseEmitter forwardStream(Flux<DataBuffer> body, Long auditId, long startedAt) {
         SseEmitter emitter = new SseEmitter(properties.getSseTimeoutMs());
         // 解析器持有跨分块状态，必须每个请求独立实例
         SseParser parser = new SseParser();
         // 解码器同样跨分块：DataBuffer 边界可能切在中文等多字节字符中间，
         // 逐块 new String(bytes, UTF_8) 会产出替换字符 �
         Utf8StreamDecoder decoder = new Utf8StreamDecoder();
+        AiStreamRecorder recorder = new AiStreamRecorder(objectMapper);
+        AtomicBoolean persistOnce = new AtomicBoolean(false);
+        Consumer<AiAuditService.AiResult> persist = result -> {
+            if (persistOnce.compareAndSet(false, true)) {
+                auditService.finish(auditId, result);
+            }
+        };
+        Runnable persistFromRecorder = () -> persist.accept(resultOf(recorder, startedAt));
 
         Flux<SseParser.SseEvent> events = body
                 .map(buffer -> {
@@ -150,12 +181,23 @@ public class AiGatewayService {
                 d.dispose();
             }
         };
-        emitter.onTimeout(cleanup);
-        emitter.onError(t -> cleanup.run());
+        emitter.onTimeout(() -> {
+            // 客户端长时间未动：保留已输出内容，标记 canceled
+            persist.accept(AiAuditService.AiResult.canceled(
+                    recorder.content(), "python", elapsedMs(startedAt)));
+            cleanup.run();
+        });
+        emitter.onError(t -> {
+            persist.accept(AiAuditService.AiResult.canceled(
+                    recorder.content(), "python", elapsedMs(startedAt)));
+            cleanup.run();
+        });
         emitter.onCompletion(cleanup);
 
         Disposable disposable = events.subscribe(
                 event -> {
+                    // 先采集再转发：即使发送失败也能保住已生成内容
+                    recorder.accept(event.event(), event.data());
                     try {
                         emitter.send(SseEmitter.event()
                                 .name(event.event())
@@ -163,11 +205,16 @@ public class AiGatewayService {
                     } catch (IOException | IllegalStateException e) {
                         // 客户端已断开：取消上游到 Python 的连接
                         log.debug("SSE 客户端断开，取消上游连接: {}", e.getMessage());
+                        persist.accept(AiAuditService.AiResult.canceled(
+                                recorder.content(), "python", elapsedMs(startedAt)));
                         cleanup.run();
                     }
                 },
                 err -> {
                     log.warn("AI 流式转发异常: {}", err.getMessage());
+                    persist.accept(AiAuditService.AiResult.failed(
+                            recorder.content(), "python", "LLM_ERROR",
+                            "AI 服务流中断，请重试", elapsedMs(startedAt)));
                     try {
                         emitter.send(SseEmitter.event().name("error")
                                 .data("{\"code\":\"LLM_ERROR\",\"message\":\"AI 服务流中断，请重试\"}",
@@ -177,14 +224,52 @@ public class AiGatewayService {
                         cleanup.run();
                     }
                 },
-                emitter::complete);
+                () -> {
+                    persistFromRecorder.run();
+                    emitter.complete();
+                });
         disposableRef.set(disposable);
         return emitter;
     }
 
-    private Map<String, Object> buildPayload(LoginUser user, AiGenerateRequest request) {
+    /** 流失败但尚未建流（连接前异常）时补记审计终态。 */
+    private void failAudit(Long auditId, BusinessException error, long startedAt) {
+        auditService.finish(auditId, AiAuditService.AiResult.failed(
+                null, "python", error.getErrorCode().name(), error.getMessage(),
+                elapsedMs(startedAt)));
+    }
+
+    private AiAuditService.AiResult resultOf(AiStreamRecorder recorder, long startedAt) {
+        long duration = elapsedMs(startedAt);
+        String status = recorder.status();
+        if (AiStreamRecorder.STATUS_SUCCESS.equals(status)) {
+            return AiAuditService.AiResult.success(recorder.content(), "python",
+                    recorder.tokensIn(), recorder.tokensOut(), duration,
+                    recorder.model(), recorder.promptVersion());
+        }
+        if (AiStreamRecorder.STATUS_FAILED.equals(status)) {
+            return AiAuditService.AiResult.failed(recorder.content(), "python",
+                    recorder.errorCode(), recorder.errorMessage(), duration);
+        }
+        return AiAuditService.AiResult.canceled(recorder.content(), "python", duration);
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000L;
+    }
+
+    private static String newTraceId() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private Map<String, Object> buildPayload(LoginUser user, AiGenerateRequest request,
+                                             String traceId) {
         Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("trace_id", traceId);
         payload.put("user_id", user.getId());
+        if (request.getArticleId() != null) {
+            payload.put("article_id", request.getArticleId());
+        }
         payload.put("task", request.getTask());
         payload.put("params", request.paramsAsMap());
         payload.put("context", buildContext(request));
