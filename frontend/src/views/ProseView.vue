@@ -5,13 +5,13 @@
       <div class="page-sub">PROSE · 以影寄情</div>
     </header>
     <el-row :gutter="16">
-      <!-- 左侧：素材（风格 + 情绪 + 近况 + 图片） -->
+      <!-- 左侧：素材（图片 + 情绪 / 近况），sticky 跟随长文滚动 -->
       <el-col :span="10" class="material-col">
-        <el-card shadow="never" class="panel-card material-card">
+        <el-card shadow="never" class="panel-card">
           <template #header>
             <div class="card-header">
               <span>素材</span>
-              <el-tag size="small" type="info">图片选填，最多 5 张</el-tag>
+              <span class="card-header-sub">情绪或近况填其一即可生成</span>
             </div>
           </template>
 
@@ -26,45 +26,42 @@
               <el-input v-model="emotion" maxlength="200" show-word-limit
                         placeholder="如：平静、疲惫、怅然若失…" />
               <div class="emotion-chips">
-                <button v-for="word in emotionPresets" :key="word" type="button"
-                        class="emotion-chip" :class="{ active: emotion === word }"
-                        @click="emotion = word">{{ word }}</button>
+                <span v-for="w in emotionPresets" :key="w" class="chip"
+                      :class="{ active: emotion === w }"
+                      @click="emotion = emotion === w ? '' : w">{{ w }}</span>
               </div>
             </el-form-item>
             <el-form-item label="近况 / 想说的">
               <el-input v-model="recentState" type="textarea" :rows="5" maxlength="1000"
                         show-word-limit placeholder="最近发生了什么？想借着这张照片写点什么？" />
             </el-form-item>
+            <el-form-item label="配图（选填，最多 5 张）">
+              <el-upload drag multiple :show-file-list="false" :limit="5"
+                         :http-request="uploadImage"
+                         accept="image/jpeg,image/png,image/gif,image/webp"
+                         :on-exceed="onExceed" :disabled="images.length >= 5 || uploading"
+                         class="img-upload">
+                <el-icon class="upload-icon"><Plus /></el-icon>
+                <div class="upload-text">
+                  {{ uploading ? '上传中…' : `点击或拖拽图片到此处（${images.length}/5）` }}
+                </div>
+                <div class="upload-sub">人物照、风景照，或任何触动你的画面</div>
+              </el-upload>
+              <div v-if="images.length" class="thumbs">
+                <div v-for="img in images" :key="img.url" class="thumb-item">
+                  <img :src="img.url" :alt="img.name" />
+                  <el-icon class="thumb-remove" @click="removeImage(img.url)"><Close /></el-icon>
+                </div>
+              </div>
+            </el-form-item>
           </el-form>
 
-          <el-upload drag multiple :show-file-list="false" :limit="5" :http-request="uploadImage"
-                     accept="image/jpeg,image/png,image/gif,image/webp" :on-exceed="onExceed"
-                     :disabled="images.length >= 5 || uploading" class="upload-drop">
-            <el-icon class="upload-icon"><Plus /></el-icon>
-            <div class="upload-text">
-              {{ uploading ? '上传中…' : `点击或拖拽图片到此处（${images.length}/5）` }}
-            </div>
-          </el-upload>
-          <div class="hint">可以是人物照、风景照，或任何触动你的画面</div>
-
-          <div v-if="images.length" class="thumbs">
-            <div v-for="img in images" :key="img.url" class="thumb-item">
-              <img :src="img.url" :alt="img.name" />
-              <el-icon class="thumb-remove" @click="removeImage(img.url)"><Close /></el-icon>
-            </div>
-          </div>
-
-          <div class="actions">
-            <el-button type="primary" size="large" class="generate-btn" :loading="generating"
-                       :disabled="generating || !canGenerate" @click="startGenerate">
-              {{ outputMd ? '重新生成散文' : '生成散文初稿' }}
-            </el-button>
-            <el-button v-if="generating" type="danger" @click="stopGenerate">停止</el-button>
-          </div>
-          <div v-if="!canGenerate && !generating" class="hint">
-            填写情绪或近况其一即可生成；图片可选
-          </div>
-          <div v-if="materialRestored" class="hint">已恢复上次未完成的素材</div>
+          <el-button type="primary" class="generate-btn" :loading="generating"
+                     :disabled="generating || !canGenerate" @click="startGenerate">
+            {{ outputMd ? '按当前素材重新生成' : '生成散文初稿' }}
+          </el-button>
+          <el-button v-if="generating" type="danger" class="generate-btn stop-btn"
+                     @click="stopGenerate">停止生成</el-button>
         </el-card>
       </el-col>
 
@@ -75,11 +72,14 @@
             <div class="card-header">
               <span>初稿</span>
               <div class="header-actions">
-                <el-tag size="small" :type="generating ? 'warning' : 'info'">
-                  {{ generating ? '流式生成中' : (editing ? '编辑中' : 'SSE 流式') }}
-                </el-tag>
+                <span v-if="outputMd && !generating" class="draft-count">
+                  {{ outputMd.length }} 字
+                </span>
                 <el-segmented v-if="outputMd && !generating" v-model="viewMode" size="small"
                               :options="viewModeOptions" />
+                <el-tag size="small" :type="generating ? 'warning' : 'info'">
+                  {{ generating ? '流式生成中' : 'SSE 流式' }}
+                </el-tag>
               </div>
             </div>
           </template>
@@ -89,68 +89,67 @@
             正在生成，已接收 {{ outputMd.length }} 字…
           </div>
 
-          <template v-if="outputMd && !generating">
-            <el-input v-model="title" maxlength="200" placeholder="给这篇散文起个标题"
-                      class="title-input" />
-          </template>
+          <template v-if="outputMd || generating">
+            <el-input v-if="outputMd && !generating" v-model="title" class="draft-title"
+                      maxlength="200" placeholder="标题（保存前可修改）" />
 
-          <template v-if="editing">
-            <el-input ref="draftTextarea" v-model="outputMd" type="textarea" :rows="16"
-                      class="draft-editor" placeholder="在此修改初稿…"
-                      @select="onDraftSelect" @keyup="onDraftSelect" @mouseup="onDraftSelect"
-                      @input="onDraftInput" />
-            <div class="selection-bar">
-              <span class="selection-bar-label">
-                {{ draftSelection ? `已选中 ${draftSelection.selectedText.length} 字` : '选中文字后可让 AI 给建议' }}
-              </span>
-              <template v-if="draftSelection">
-                <el-button v-for="m in draftModes" :key="m.mode" size="small"
-                           :disabled="draftLoading" @click="askDraft(m.mode)">{{ m.label }}</el-button>
+            <template v-if="viewMode === 'edit' && !generating">
+              <el-input ref="draftTextarea" v-model="outputMd" type="textarea"
+                        :autosize="{ minRows: 14, maxRows: 28 }" class="draft-editor"
+                        placeholder="在此修改初稿…"
+                        @select="onDraftSelect" @keyup="onDraftSelect" @mouseup="onDraftSelect"
+                        @input="onDraftInput" />
+              <div class="selection-bar">
+                <span class="selection-bar-label">
+                  {{ draftSelection ? `已选中 ${draftSelection.selectedText.length} 字` : '选中文字后可让 AI 给建议' }}
+                </span>
+                <template v-if="draftSelection">
+                  <el-button v-for="m in draftModes" :key="m.mode" size="small"
+                             :disabled="draftLoading" @click="askDraft(m.mode)">{{ m.label }}</el-button>
+                </template>
+              </div>
+              <div v-if="draftLoading" class="stream-tip">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                正在生成建议，已接收 {{ draftResult.length }} 字…
+              </div>
+              <template v-if="draftResult">
+                <div class="pane-caption">
+                  <span class="pane-mode">{{ draftModeLabel }}</span>
+                  <span>{{ draftSelection?.selectedText.length || 0 }} 字</span>
+                </div>
+                <blockquote v-if="draftSelection" class="pane-quote">{{ draftSelection.selectedText }}</blockquote>
+                <div class="markdown-body result-body" v-html="renderMarkdown(draftResult)"></div>
+                <div class="result-actions">
+                  <el-button v-if="draftMode !== 'advice'" size="small" type="primary"
+                             @click="applyDraftSelectionSuggestion">替换选中</el-button>
+                  <el-button size="small" @click="draftResult = ''">清除</el-button>
+                </div>
               </template>
-            </div>
-            <div v-if="draftLoading" class="stream-tip">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              正在生成建议，已接收 {{ draftResult.length }} 字…
-            </div>
-            <template v-if="draftResult">
-              <div class="pane-caption">
-                <span class="pane-mode">{{ draftModeLabel }}</span>
-                <span>{{ draftSelection?.selectedText.length || 0 }} 字</span>
+            </template>
+            <div v-else ref="resultBodyRef" class="markdown-body result-body draft-preview"
+                 v-html="renderedOutput"></div>
+
+            <template v-if="outputMd && !generating">
+              <div class="result-actions main-actions">
+                <el-button size="small" type="primary" :loading="saving" @click="saveDraft">
+                  存为草稿并继续编辑
+                </el-button>
+                <el-button size="small" @click="copyResult">复制</el-button>
               </div>
-              <blockquote v-if="draftSelection" class="pane-quote">{{ draftSelection.selectedText }}</blockquote>
-              <div class="markdown-body result-body" v-html="renderMarkdown(draftResult)"></div>
-              <div class="result-actions">
-                <el-button v-if="draftMode !== 'advice'" size="small" type="primary"
-                           @click="applyDraftSelectionSuggestion">替换选中</el-button>
-                <el-button size="small" @click="draftResult = ''">清除</el-button>
+
+              <el-divider content-position="left">全文建议</el-divider>
+              <div class="review-bar">
+                <el-button size="small" type="primary" :loading="reviewLoading"
+                           :disabled="reviewLoading" @click="reviewDraft">审阅初稿</el-button>
+                <span class="hint">建议基于当前初稿；点「替换」才会写入，可随时忽略</span>
               </div>
+              <AiSuggestionPanel :suggestions="reviewSuggestions" :loading="reviewLoading"
+                                 empty-text="暂无建议，点击「审阅初稿」开始"
+                                 @locate="locateDraftSuggestion" @apply="applyDraftSuggestion"
+                                 @ignore="ignoreDraftSuggestion" />
             </template>
           </template>
-          <template v-else>
-            <div v-if="outputMd" ref="previewBodyRef" class="markdown-body result-body preview-body"
-                 v-html="renderedOutput"></div>
-            <el-empty v-else description="写下情绪或近况，点击生成；配图更有画面感" />
-          </template>
-
-          <template v-if="outputMd && !generating">
-            <div class="result-actions save-actions">
-              <el-button size="small" type="primary" :loading="saving" @click="saveDraft">
-                存为草稿并继续编辑
-              </el-button>
-              <el-button size="small" @click="copyResult">复制</el-button>
-            </div>
-
-            <el-divider content-position="left">全文建议</el-divider>
-            <div class="review-bar">
-              <el-button size="small" type="primary" :loading="reviewLoading"
-                         :disabled="reviewLoading" @click="reviewDraft(false)">审阅初稿</el-button>
-              <span class="hint">建议基于当前初稿；点「替换」才会写入，可随时忽略</span>
-            </div>
-            <AiSuggestionPanel :suggestions="reviewSuggestions" :loading="reviewLoading"
-                               empty-text="暂无建议，点击「审阅初稿」开始"
-                               @locate="locateDraftSuggestion" @apply="applyDraftSuggestion"
-                               @ignore="ignoreDraftSuggestion" />
-          </template>
+          <el-empty v-else description="写下情绪或近况，点击生成；配图更有画面感" />
         </el-card>
       </el-col>
     </el-row>
@@ -175,32 +174,28 @@ const style = ref('luxun')
 const emotion = ref('')
 const recentState = ref('')
 
-const emotionPresets = ['平静', '疲惫', '怅然', '思念', '喜悦', '释然', '焦躁', '感激']
+const emotionPresets = ['平静', '疲惫', '怅然', '喜悦', '思念', '释然', '焦躁', '感激']
 
 const generating = ref(false)
 const outputMd = ref('')
 const title = ref('')
 const saving = ref(false)
-const previewBodyRef = ref(null)
+const resultBodyRef = ref(null)
 let abortController = null
 
 // ---------- 初稿编辑与划词建议 ----------
-const editing = ref(false)
+// viewMode: preview（渲染预览）/ edit（纯文本编辑 + 划词建议）
+const viewMode = ref('preview')
+const viewModeOptions = [
+  { label: '预览', value: 'preview' },
+  { label: '编辑', value: 'edit' }
+]
 const draftTextarea = ref(null)
 const draftSelection = ref(null)
 const draftMode = ref('advice')
 const draftLoading = ref(false)
 const draftResult = ref('')
 let draftAbort = null
-
-const viewModeOptions = [
-  { label: '预览', value: 'preview' },
-  { label: '编辑', value: 'edit' }
-]
-const viewMode = computed({
-  get: () => (editing.value ? 'edit' : 'preview'),
-  set: (value) => setEditing(value === 'edit')
-})
 
 const draftModes = [
   { mode: 'advice', label: '给建议' },
@@ -227,11 +222,10 @@ function renderMarkdown(md) {
   }
 }
 
-function setEditing(value) {
-  editing.value = value
+watch(viewMode, () => {
   draftSelection.value = null
   draftResult.value = ''
-}
+})
 
 function textareaEl() {
   return draftTextarea.value?.textarea || null
@@ -375,7 +369,7 @@ async function locateDraftSuggestion(index) {
     ElMessage.warning('原文已修改，本条无法定位')
     return
   }
-  if (!editing.value) setEditing(true)
+  if (viewMode.value !== 'edit') viewMode.value = 'edit'
   await nextTick()
   const el = textareaEl()
   if (!el) return
@@ -419,13 +413,13 @@ onBeforeUnmount(() => {
   if (draftAbort) draftAbort.abort()
 })
 
-// ---------- 素材本地暂存（刷新不丢；保存草稿后清除） ----------
+// ---------- 素材本地持久化（防刷新丢失；保存草稿后清除） ----------
 const MATERIAL_KEY = 'aiblog:prose:material'
-const materialRestored = ref(false)
+let materialReady = false
 
 function persistMaterial() {
+  if (!materialReady) return
   try {
-    if (!emotion.value && !recentState.value && !images.value.length) return
     localStorage.setItem(MATERIAL_KEY, JSON.stringify({
       style: style.value,
       emotion: emotion.value,
@@ -447,18 +441,16 @@ function restoreMaterial() {
   if (!raw) return
   try {
     const snap = JSON.parse(raw)
-    if (snap?.style) style.value = snap.style
-    if (snap?.emotion) emotion.value = snap.emotion
-    if (snap?.recentState) recentState.value = snap.recentState
-    if (Array.isArray(snap?.images)) images.value = snap.images.filter((i) => i?.url)
-    materialRestored.value = !!(snap?.emotion || snap?.recentState || images.value.length)
+    if (snap.style) style.value = snap.style
+    if (typeof snap.emotion === 'string') emotion.value = snap.emotion
+    if (typeof snap.recentState === 'string') recentState.value = snap.recentState
+    if (Array.isArray(snap.images)) images.value = snap.images.filter((i) => i?.url)
   } catch {
     localStorage.removeItem(MATERIAL_KEY)
   }
 }
 
 function clearMaterial() {
-  materialRestored.value = false
   try {
     localStorage.removeItem(MATERIAL_KEY)
   } catch {
@@ -468,7 +460,10 @@ function clearMaterial() {
 
 watch([style, emotion, recentState, images], persistMaterial, { deep: true })
 
-onMounted(restoreMaterial)
+onMounted(() => {
+  restoreMaterial()
+  materialReady = true
+})
 
 // ---------- 图片上传 ----------
 async function uploadImage(options) {
@@ -510,11 +505,10 @@ function buildPayload() {
 }
 
 async function startGenerate() {
-  // 已有初稿时重新生成前先确认，避免覆盖未保存的手工修改
   if (outputMd.value && !generating.value) {
     try {
       await ElMessageBox.confirm(
-        '重新生成将丢弃当前初稿（含手工修改），是否继续？',
+        '重新生成将覆盖当前初稿（含你的修改），是否继续？',
         '重新生成',
         { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' }
       )
@@ -525,8 +519,8 @@ async function startGenerate() {
   generating.value = true
   outputMd.value = ''
   title.value = ''
+  viewMode.value = 'preview'
   reviewSuggestions.value = []
-  setEditing(false)
   abortController = new AbortController()
   try {
     // delta 追加；done 用完整文本整体替换（契约 5.4.3）
@@ -574,7 +568,7 @@ function stopGenerate() {
 
 async function scrollResult() {
   await nextTick()
-  const el = previewBodyRef.value
+  const el = resultBodyRef.value
   if (el) el.scrollTop = el.scrollHeight
 }
 
@@ -619,8 +613,8 @@ async function saveDraft() {
       summary: deriveSummary(outputMd.value),
       status: 'draft'
     })
-    clearMaterial()
     ElMessage.success('草稿已保存')
+    clearMaterial()
     router.push(`/write/${created.id}`)
   } finally {
     saving.value = false
@@ -648,87 +642,89 @@ async function saveDraft() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   letter-spacing: 0.08em;
 }
-.hint {
-  margin-top: 8px;
+.card-header-sub {
+  font-size: 12px;
+  font-weight: 400;
   color: var(--ink-faint);
-  font-size: 13px;
-  line-height: 1.6;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
-/* ---------- 素材栏 ---------- */
+/* ---------- 素材卡 ---------- */
 .material-col {
   align-self: flex-start;
   position: sticky;
   top: 20px;
 }
-.material-form :deep(.el-form-item) {
-  margin-bottom: 14px;
+.material-form {
+  margin-top: 4px;
 }
 .emotion-chips {
-  margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
 }
-.emotion-chip {
+.chip {
   padding: 2px 10px;
   border: 1px solid var(--hairline-dark);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-soft);
-  font-family: var(--font-serif);
   font-size: 12.5px;
   letter-spacing: 0.06em;
+  color: var(--ink-soft);
   cursor: pointer;
+  user-select: none;
   transition: all 0.2s ease;
 }
-.emotion-chip:hover {
+.chip:hover {
   border-color: var(--cinnabar);
   color: var(--cinnabar);
 }
-.emotion-chip.active {
+.chip.active {
   background: var(--cinnabar);
   border-color: var(--cinnabar);
   color: #fdfbf4;
 }
 
 /* 拖拽上传区 */
-.upload-drop :deep(.el-upload) {
+.img-upload {
   width: 100%;
 }
-.upload-drop :deep(.el-upload-dragger) {
+.img-upload :deep(.el-upload) {
+  width: 100%;
+}
+.img-upload :deep(.el-upload-dragger) {
   width: 100%;
   padding: 18px 12px;
   background: var(--paper-deep);
   border: 1px dashed var(--hairline-dark);
   border-radius: 2px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
   transition: border-color 0.2s ease;
 }
-.upload-drop :deep(.el-upload-dragger:hover) {
+.img-upload :deep(.el-upload-dragger:hover) {
   border-color: var(--cinnabar);
 }
-.upload-drop :deep(.el-upload.is-disabled .el-upload-dragger) {
-  opacity: 0.55;
+.img-upload :deep(.el-upload.is-disabled .el-upload-dragger) {
   cursor: not-allowed;
+  opacity: 0.6;
 }
 .upload-icon {
-  font-size: 20px;
+  font-size: 22px;
   color: var(--ink-faint);
 }
 .upload-text {
+  margin-top: 6px;
   font-size: 13px;
   color: var(--ink-soft);
   letter-spacing: 0.05em;
 }
-
+.upload-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
 .thumbs {
   display: flex;
   flex-wrap: wrap;
@@ -761,51 +757,38 @@ async function saveDraft() {
   cursor: pointer;
   font-size: 12px;
 }
-.actions {
-  margin-top: 16px;
-  display: flex;
-  gap: 8px;
-}
+
 .generate-btn {
-  flex: 1;
+  width: 100%;
+  margin-top: 4px;
+}
+.generate-btn + .generate-btn {
+  margin-left: 0;
+}
+.stop-btn {
+  margin-top: 8px;
 }
 
-/* ---------- 初稿栏 ---------- */
+/* ---------- 初稿卡 ---------- */
 .result-card {
   min-height: 420px;
 }
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
-.header-actions :deep(.el-segmented) {
-  --el-segmented-bg-color: var(--paper-deep);
-  --el-segmented-item-selected-bg-color: var(--cinnabar);
-  --el-segmented-item-selected-color: #fdfbf4;
-  font-family: var(--font-serif);
+.draft-count {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
 }
-.title-input {
+.draft-title {
   margin-bottom: 12px;
 }
-.title-input :deep(.el-input__wrapper) {
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
-  border-bottom: 1px solid var(--hairline-dark);
-  padding-left: 2px;
-  padding-right: 2px;
-  transition: border-color 0.25s ease;
-}
-.title-input :deep(.el-input__wrapper.is-focus) {
-  box-shadow: none !important;
-  border-bottom-color: var(--cinnabar);
-}
-.title-input :deep(.el-input__inner) {
-  font-size: 19px;
-  font-weight: 900;
+.draft-title :deep(.el-input__inner) {
+  font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--ink);
 }
 .stream-tip {
   color: var(--ink-faint);
@@ -825,14 +808,14 @@ async function saveDraft() {
   font-size: 14px;
   background: var(--paper-deep);
 }
-.preview-body {
-  min-height: 260px;
+.draft-preview {
+  min-height: 200px;
 }
 .result-actions {
   display: flex;
   gap: 6px;
 }
-.save-actions {
+.main-actions {
   margin-top: 12px;
 }
 
@@ -878,6 +861,12 @@ async function saveDraft() {
   font-size: 13px;
   line-height: 1.7;
   color: var(--ink);
+}
+.hint {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
 }
 .review-bar {
   display: flex;

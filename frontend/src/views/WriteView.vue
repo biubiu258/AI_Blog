@@ -365,7 +365,7 @@ function onKeydown(event) {
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocumentMouseDown)
-  window.removeEventListener('keydown', onKeydownSave)
+  window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('beforeunload', onBeforeUnload)
   if (idleTimer) clearTimeout(idleTimer)
   if (autosaveTimer) clearTimeout(autosaveTimer)
@@ -910,8 +910,6 @@ function onBeforeUnload(event) {
   event.returnValue = ''
 }
 
-const onKeydownSave = onKeydown
-
 watch(() => [form.title, form.categoryId, form.summary, form.contentHtml,
   form.tags, form.scheduledAt], scheduleAutosave, { deep: true })
 
@@ -970,7 +968,7 @@ function afterPublish(status, data) {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', onKeydownSave)
+  window.addEventListener('keydown', onKeydown)
   window.addEventListener('beforeunload', onBeforeUnload)
   try {
     categories.value = await categoryApi.list()
