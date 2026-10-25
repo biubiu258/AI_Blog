@@ -5,6 +5,7 @@ import com.aiblog.dto.ai.AiGenerateRequest;
 import com.aiblog.dto.ai.AiReviewRequest;
 import com.aiblog.dto.ai.AiReviewResponse;
 import com.aiblog.security.CurrentUser;
+import com.aiblog.service.AiAuditService;
 import com.aiblog.service.AiGatewayService;
 import com.aiblog.service.AiReviewService;
 import com.aiblog.service.AiUsageService;
@@ -28,6 +29,7 @@ public class AiController {
     private final AiGatewayService aiGatewayService;
     private final AiReviewService aiReviewService;
     private final AiUsageService aiUsageService;
+    private final AiAuditService aiAuditService;
 
     /**
      * AI 生成（SSE 流式）。流建立前失败返回统一 JSON（2001/2002 等），
@@ -53,8 +55,10 @@ public class AiController {
     /** 建议被采纳（一键替换后调用），用于统计采纳率 */
     @PostMapping("/adopt")
     public ApiResponse<Void> adopt(@RequestBody AdoptRequest request) {
-        aiUsageService.markAdopted(CurrentUser.id(),
-                request.action() == null ? "review" : request.action());
+        String action = request.action() == null ? "review" : request.action();
+        aiUsageService.markAdopted(CurrentUser.id(), action);
+        // 同步标记审计记录，审核时能区分“生成过”和“实际被使用”
+        aiAuditService.markLatestAdopted(CurrentUser.id(), action);
         return ApiResponse.ok();
     }
 

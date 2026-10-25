@@ -22,17 +22,20 @@ async def care_check(
     client: LLMClient = Depends(get_llm_client),
 ) -> CareCheckResponse:
     """fail-open：任何异常都按 none 放行，绝不阻断发布；日志不含正文。"""
-    set_request_id(uuid.uuid4().hex[:8])
+    # 复用 Java 传入的 trace_id，便于与 ai_output 审计记录对齐
+    set_request_id(req.trace_id or uuid.uuid4().hex[:8])
     started = time.monotonic()
     try:
         result = await check_care(req, client)
     except Exception:
-        log.exception("关怀检测异常，按 none 放行 user_id=%s", req.user_id)
+        log.exception("关怀检测异常，按 none 放行 user_id=%s trace_id=%s",
+                      req.user_id, req.trace_id or "-")
         result = none_result()
 
     log.info(
-        "care_check user_id=%s level=%s title_len=%d content_len=%d duration_ms=%d keywords=%s",
-        req.user_id, result.level, len(req.title), len(req.content),
+        "care_check user_id=%s trace_id=%s level=%s title_len=%d content_len=%d "
+        "duration_ms=%d keywords=%s",
+        req.user_id, req.trace_id or "-", result.level, len(req.title), len(req.content),
         int((time.monotonic() - started) * 1000),
         "、".join(result.keywords) or "无",
     )

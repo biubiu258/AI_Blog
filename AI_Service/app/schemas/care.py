@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 class CareCheckRequest(BaseModel):
     user_id: int = Field(gt=0)
+    # Java 生成的调用追踪号，用于日志关联
+    trace_id: str | None = None
     title: str = ""
     content: str = ""
 

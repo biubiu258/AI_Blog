@@ -98,5 +98,10 @@ export const adminApi = {
   pendingReports: () => request.get('/admin/reports/pending-count'),
   handleReport: (id, action) => request.put(`/admin/reports/${id}/handle`, { action }),
   aiUsage: (params) => request.get('/admin/ai/usage', { params }),
+  // AI 输出审计：列表 / 详情 / 待审数 / 人工审核
+  aiOutputs: (params) => request.get('/admin/ai/outputs', { params }),
+  aiOutput: (id) => request.get(`/admin/ai/outputs/${id}`),
+  pendingAiOutputs: () => request.get('/admin/ai/outputs/pending-count'),
+  reviewAiOutput: (id, data) => request.put(`/admin/ai/outputs/${id}/review`, data),
   listLogs: (params) => request.get('/admin/logs', { params })
 }

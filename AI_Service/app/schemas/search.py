@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 class SearchRequest(BaseModel):
     query: str = Field(max_length=500)
     top_k: int = Field(default=10, ge=1, le=50)
+    # Java 生成的调用追踪号，用于日志关联
+    trace_id: str | None = None
 
 
 class RetrieveRequest(BaseModel):

@@ -290,6 +290,92 @@
         </div>
       </el-tab-pane>
 
+      <!-- AI 输出审计：仅超级管理员 -->
+      <el-tab-pane v-if="isSuper" label="AI 输出审计" name="aiAudit">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <el-select v-model="auditQuery.action" clearable placeholder="全部动作"
+                       style="width: 128px" @change="loadAiOutputs(1)">
+              <el-option label="生成" value="generate" />
+              <el-option label="审阅" value="review" />
+              <el-option label="搜索" value="search" />
+              <el-option label="关怀检测" value="care" />
+            </el-select>
+            <el-select v-model="auditQuery.status" clearable placeholder="全部终态"
+                       style="width: 120px" @change="loadAiOutputs(1)">
+              <el-option label="成功" value="success" />
+              <el-option label="失败" value="failed" />
+              <el-option label="已取消" value="canceled" />
+              <el-option label="进行中" value="streaming" />
+            </el-select>
+            <el-select v-model="auditQuery.reviewStatus" clearable placeholder="全部审核态"
+                       style="width: 132px" @change="loadAiOutputs(1)">
+              <el-option label="待审核" value="pending" />
+              <el-option label="已通过" value="passed" />
+              <el-option label="已标记" value="flagged" />
+            </el-select>
+            <el-input v-model="auditQuery.keyword" placeholder="追踪号 / 返回内容 / 错误"
+                      clearable style="width: 220px" @keyup.enter="loadAiOutputs(1)"
+                      @clear="loadAiOutputs(1)" />
+            <el-button @click="loadAiOutputs(1)">查询</el-button>
+            <span v-if="auditPending" class="pending-tip">待审核 {{ auditPending }}</span>
+          </div>
+        </div>
+        <div class="sheet">
+          <el-table :data="auditItems" v-loading="loadingAudit">
+            <el-table-column label="时间" width="150">
+              <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="追踪号" width="140">
+              <template #default="{ row }">
+                <span class="mono">{{ shortTrace(row.traceId) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="动作" width="104">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ auditActionLabel(row.action) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="task" label="任务" width="96" />
+            <el-table-column label="返回内容预览" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.outputPreview || '（无返回内容）' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="终态" width="96">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" :type="auditStatusType(row.status)">
+                  {{ auditStatusLabel(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="审核" width="96">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain" :type="auditReviewType(row.reviewStatus)">
+                  {{ auditReviewLabel(row.reviewStatus) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="字数" width="80">
+              <template #default="{ row }">{{ row.outputLength || 0 }}</template>
+            </el-table-column>
+            <el-table-column label="耗时" width="90">
+              <template #default="{ row }">{{ row.durationMs || 0 }} ms</template>
+            </el-table-column>
+            <el-table-column label="操作" width="110" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openAudit(row)">详情 / 审核</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div class="pager">
+          <el-pagination background layout="prev, pager, next, total" :total="auditTotal"
+                         :page-size="auditQuery.size" :current-page="auditQuery.page"
+                         @current-change="loadAiOutputs" />
+        </div>
+      </el-tab-pane>
+
       <!-- 操作日志：仅超级管理员 -->
       <el-tab-pane v-if="isSuper" label="操作日志" name="logs">
         <div class="toolbar">
@@ -373,6 +459,87 @@
         <el-button type="primary" :loading="banDialog.saving" @click="confirmBan">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 输出详情与人工审核 -->
+    <el-drawer v-model="auditDrawer.visible" title="AI 输出详情" size="640px">
+      <div v-loading="auditDrawer.loading" class="audit-body">
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="追踪号">{{ auditDrawer.detail.traceId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="动作">
+            {{ auditActionLabel(auditDrawer.detail.action) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="任务">{{ auditDrawer.detail.task || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ auditDrawer.detail.source || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="用户 ID">{{ auditDrawer.detail.userId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="文章 ID">{{ auditDrawer.detail.articleId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="模型">{{ auditDrawer.detail.model || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="提示词版本">
+            {{ auditDrawer.detail.promptVersion || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="终态">
+            <el-tag size="small" effect="plain" :type="auditStatusType(auditDrawer.detail.status)">
+              {{ auditStatusLabel(auditDrawer.detail.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="审核态">
+            <el-tag size="small" effect="plain" :type="auditReviewType(auditDrawer.detail.reviewStatus)">
+              {{ auditReviewLabel(auditDrawer.detail.reviewStatus) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="Token">
+            {{ auditDrawer.detail.tokensIn || 0 }} / {{ auditDrawer.detail.tokensOut || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="耗时">
+            {{ auditDrawer.detail.durationMs || 0 }} ms
+          </el-descriptions-item>
+          <el-descriptions-item label="是否采纳">
+            {{ auditDrawer.detail.adopted ? '已采纳' : '未采纳' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="结束时间">
+            {{ formatDate(auditDrawer.detail.finishedAt) || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="auditDrawer.detail.errorCode" label="错误码">
+            {{ auditDrawer.detail.errorCode }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="auditDrawer.detail.errorMessage" label="错误信息" :span="2">
+            {{ auditDrawer.detail.errorMessage }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="audit-section">
+          <div class="audit-section-title">AI 返回内容（完整保存）</div>
+          <pre class="audit-pre">{{ auditDrawer.detail.output || '（无返回内容）' }}</pre>
+        </div>
+
+        <div class="audit-section">
+          <div class="audit-section-title">
+            请求快照
+            <span v-if="auditDrawer.detail.requestDigest" class="mono audit-digest">
+              SHA-256 {{ auditDrawer.detail.requestDigest.slice(0, 16) }}…
+            </span>
+          </div>
+          <pre class="audit-pre">{{ prettySnapshot }}</pre>
+        </div>
+
+        <div class="audit-section">
+          <div class="audit-section-title">人工审核</div>
+          <el-input v-model="auditDrawer.note" type="textarea" :rows="2" maxlength="500"
+                    show-word-limit placeholder="审核备注（可选）" />
+          <div class="audit-review-actions">
+            <el-button type="success" :loading="auditDrawer.saving"
+                       @click="submitAuditReview('passed')">通过</el-button>
+            <el-button type="danger" :loading="auditDrawer.saving"
+                       @click="submitAuditReview('flagged')">标记问题</el-button>
+            <el-button :loading="auditDrawer.saving"
+                       @click="submitAuditReview('pending')">重置待审</el-button>
+          </div>
+          <div v-if="auditDrawer.detail.reviewedAt" class="audit-reviewed">
+            最近审核：{{ formatDate(auditDrawer.detail.reviewedAt) }}
+            <span v-if="auditDrawer.detail.reviewNote"> · {{ auditDrawer.detail.reviewNote }}</span>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -650,6 +817,122 @@ async function loadAiUsage() {
   }
 }
 
+/* ---------- AI 输出审计（仅超级管理员） ---------- */
+const auditItems = ref([])
+const auditTotal = ref(0)
+const auditPending = ref(0)
+const loadingAudit = ref(false)
+const auditQuery = reactive({
+  page: 1, size: 10, action: '', status: '', reviewStatus: '', keyword: ''
+})
+const auditDrawer = reactive({
+  visible: false, loading: false, saving: false, detail: {}, note: ''
+})
+
+const prettySnapshot = computed(() => {
+  const raw = auditDrawer.detail.requestSnapshot
+  if (!raw) return '（无请求快照）'
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+})
+
+async function loadAiOutputs(page = auditQuery.page) {
+  auditQuery.page = page
+  loadingAudit.value = true
+  try {
+    const data = await adminApi.aiOutputs({
+      page: auditQuery.page,
+      size: auditQuery.size,
+      action: auditQuery.action || undefined,
+      status: auditQuery.status || undefined,
+      reviewStatus: auditQuery.reviewStatus || undefined,
+      keyword: auditQuery.keyword || undefined
+    })
+    auditItems.value = data.items || []
+    auditTotal.value = data.total || 0
+  } finally {
+    loadingAudit.value = false
+  }
+  loadAuditPending()
+}
+
+async function loadAuditPending() {
+  try {
+    const data = await adminApi.pendingAiOutputs()
+    auditPending.value = data?.count || 0
+  } catch {
+    auditPending.value = 0
+  }
+}
+
+async function openAudit(row) {
+  auditDrawer.visible = true
+  auditDrawer.loading = true
+  auditDrawer.note = ''
+  auditDrawer.detail = { ...row }
+  try {
+    auditDrawer.detail = await adminApi.aiOutput(row.id)
+    auditDrawer.note = auditDrawer.detail.reviewNote || ''
+  } finally {
+    auditDrawer.loading = false
+  }
+}
+
+async function submitAuditReview(status) {
+  const id = auditDrawer.detail?.id
+  if (!id) return
+  auditDrawer.saving = true
+  try {
+    auditDrawer.detail = await adminApi.reviewAiOutput(id, {
+      status,
+      note: auditDrawer.note || ''
+    })
+    ElMessage.success(
+      status === 'passed' ? '已通过'
+        : status === 'flagged' ? '已标记问题'
+          : '已重置为待审')
+    loadAiOutputs()
+  } finally {
+    auditDrawer.saving = false
+  }
+}
+
+function auditActionLabel(action) {
+  return { generate: '生成', review: '审阅', search: '搜索', care: '关怀检测' }[action]
+    || action || '-'
+}
+
+function auditStatusType(status) {
+  if (status === 'success') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'streaming') return 'warning'
+  return 'info'
+}
+
+function auditStatusLabel(status) {
+  return { success: '成功', failed: '失败', canceled: '已取消', streaming: '进行中' }[status]
+    || status || '-'
+}
+
+function auditReviewType(status) {
+  if (status === 'passed') return 'success'
+  if (status === 'flagged') return 'danger'
+  return 'warning'
+}
+
+function auditReviewLabel(status) {
+  return { pending: '待审核', passed: '已通过', flagged: '已标记' }[status]
+    || status || '-'
+}
+
+function shortTrace(traceId) {
+  if (!traceId) return '-'
+  return traceId.length > 12 ? `${traceId.slice(0, 8)}…${traceId.slice(-4)}` : traceId
+}
+
 /* ---------- 操作日志（仅超级管理员） ---------- */
 const ACTIONS = [
   { value: 'BAN', label: '封禁' },
@@ -710,6 +993,7 @@ watch(activeTab, (tab) => {
   else if (tab === 'content') loadContent(1)
   else if (tab === 'reports') loadReports(1)
   else if (tab === 'ai') loadAiUsage()
+  else if (tab === 'aiAudit') loadAiOutputs(1)
   else if (tab === 'logs') loadLogs(1)
 })
 
@@ -775,5 +1059,53 @@ onMounted(() => loadCategories())
   margin-top: 18px;
   display: flex;
   justify-content: center;
+}
+.mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.audit-body {
+  padding-bottom: 24px;
+}
+.audit-section {
+  margin-top: 20px;
+}
+.audit-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+}
+.audit-digest {
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+.audit-pre {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--hairline-dark);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.audit-review-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.audit-reviewed {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
 }
 </style>

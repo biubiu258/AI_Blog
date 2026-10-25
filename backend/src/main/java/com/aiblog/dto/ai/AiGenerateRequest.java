@@ -16,6 +16,9 @@ public class AiGenerateRequest {
     @NotBlank(message = "task 不能为空")
     private String task;
 
+    /** 当前编辑的文章 id（可空），用于 AI 输出审计溯源 */
+    private Long articleId;
+
     private Params params;
 
     private Context context;

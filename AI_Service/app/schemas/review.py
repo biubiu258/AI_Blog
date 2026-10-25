@@ -14,6 +14,8 @@ Severity = Literal["low", "mid", "high"]
 
 class ReviewRequest(BaseModel):
     user_id: int = Field(gt=0)
+    # Java 生成的调用追踪号，用于与 ai_output 审计记录对齐
+    trace_id: str | None = None
     title: str | None = Field(default=None, max_length=200)
     content: str = Field(min_length=1, max_length=MAX_REVIEW_CONTENT)
     article_type: str | None = Field(default=None, max_length=100)
@@ -31,3 +33,6 @@ class ReviewSuggestion(BaseModel):
 class ReviewResponse(BaseModel):
     suggestions: list[ReviewSuggestion] = Field(default_factory=list)
     usage: dict[str, int] | None = None
+    # 模型元数据，写入 Java 侧审计记录
+    model: str | None = None
+    prompt_version: str | None = None
