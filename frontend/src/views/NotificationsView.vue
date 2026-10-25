@@ -8,8 +8,16 @@
       <div class="head-actions">
         <el-radio-group v-model="unreadOnly" size="small" @change="load(1)">
           <el-radio-button :value="false">全部</el-radio-button>
-          <el-radio-button :value="true">未读</el-radio-button>
+          <el-radio-button :value="true">未读{{ unread ? ` ${unread}` : '' }}</el-radio-button>
         </el-radio-group>
+        <el-select v-model="type" size="small" class="type-select" @change="load(1)">
+          <el-option label="全部类型" value="" />
+          <el-option label="评论" value="comment" />
+          <el-option label="回复" value="reply" />
+          <el-option label="点赞" value="like" />
+          <el-option label="收藏" value="favorite" />
+          <el-option label="关注" value="follow" />
+        </el-select>
         <el-button size="small" :disabled="!hasUnread" @click="markAllRead">全部已读</el-button>
       </div>
     </header>
@@ -51,11 +59,13 @@ const router = useRouter()
 const loading = ref(false)
 const items = ref([])
 const total = ref(0)
+const unread = ref(0)
 const page = ref(1)
 const size = 20
 const unreadOnly = ref(false)
+const type = ref('')
 
-const hasUnread = computed(() => items.value.some((n) => !n.read))
+const hasUnread = computed(() => unread.value > 0)
 
 async function load(p = page.value) {
   page.value = p
@@ -64,10 +74,12 @@ async function load(p = page.value) {
     const data = await notificationApi.list({
       page: page.value,
       size,
-      unreadOnly: unreadOnly.value
+      unreadOnly: unreadOnly.value,
+      type: type.value || undefined
     })
     items.value = data.items || []
     total.value = data.total || 0
+    unread.value = data.unread || 0
   } finally {
     loading.value = false
   }
@@ -123,6 +135,9 @@ onMounted(() => load(1))
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.type-select {
+  width: 120px;
 }
 
 .notif-list {

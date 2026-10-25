@@ -36,6 +36,7 @@
             </el-button>
             <el-button :loading="saving" @click="save('scheduled')">定时发布</el-button>
             <el-button v-if="articleId" link @click="openVersions">版本历史</el-button>
+            <span v-if="autosaveText" class="autosave-hint">{{ autosaveText }}</span>
           </div>
         </el-card>
       </el-col>
@@ -195,7 +196,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
@@ -328,7 +329,11 @@ function onDocumentMouseDown(event) {
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocumentMouseDown)
+  window.removeEventListener('beforeunload', onBeforeUnload)
   if (idleTimer) clearTimeout(idleTimer)
+  if (autosaveTimer) clearTimeout(autosaveTimer)
+  // 离开前落盘一次，避免最后 1.5 秒内的修改丢失
+  if (dirty.value) persistSnapshot()
   if (abortController) abortController.abort()
   if (selectionAbort) selectionAbort.abort()
   clearQuoteHighlights()
@@ -762,6 +767,113 @@ async function copyResult() {
   }
 }
 
+// ---------- 草稿自动保存（本地快照，防刷新/误关丢失） ----------
+const AUTOSAVE_PREFIX = 'aiblog:autosave:'
+const autosaveAt = ref(null)
+const dirty = ref(false)
+let autosaveTimer = null
+let autosaveReady = false
+
+const autosaveKey = computed(() => `${AUTOSAVE_PREFIX}${articleId.value || 'new'}`)
+
+const autosaveText = computed(() => {
+  if (!autosaveReady) return ''
+  if (dirty.value) return '有未保存的修改'
+  if (!autosaveAt.value) return ''
+  const d = autosaveAt.value
+  const p = (n) => String(n).padStart(2, '0')
+  return `已自动保存 ${p(d.getHours())}:${p(d.getMinutes())}`
+})
+
+function persistSnapshot() {
+  if (!autosaveReady) return
+  if (!form.title.trim() && !form.contentHtml.trim()) return
+  try {
+    localStorage.setItem(autosaveKey.value, JSON.stringify({
+      title: form.title,
+      categoryId: form.categoryId,
+      summary: form.summary,
+      contentHtml: form.contentHtml,
+      tags: form.tags,
+      scheduledAt: form.scheduledAt,
+      savedAt: Date.now()
+    }))
+    autosaveAt.value = new Date()
+  } catch {
+    // 本地存储不可用时静默降级，不影响写作
+  }
+  dirty.value = false
+}
+
+function scheduleAutosave() {
+  if (!autosaveReady) return
+  dirty.value = true
+  if (autosaveTimer) clearTimeout(autosaveTimer)
+  autosaveTimer = window.setTimeout(persistSnapshot, 1500)
+}
+
+async function maybeRestoreSnapshot(serverUpdatedAt) {
+  let raw = null
+  try {
+    raw = localStorage.getItem(autosaveKey.value)
+  } catch {
+    return
+  }
+  if (!raw) return
+  let snap
+  try {
+    snap = JSON.parse(raw)
+  } catch {
+    localStorage.removeItem(autosaveKey.value)
+    return
+  }
+  if (!snap?.savedAt) return
+  // 服务端已有更新版本，本地快照过期
+  if (serverUpdatedAt && snap.savedAt <= new Date(serverUpdatedAt).getTime()) {
+    localStorage.removeItem(autosaveKey.value)
+    return
+  }
+  if ((snap.title || '') === form.title && (snap.contentHtml || '') === form.contentHtml) return
+  try {
+    await ElMessageBox.confirm(
+      `发现 ${formatDate(new Date(snap.savedAt).toISOString())} 的本地草稿，是否恢复？`,
+      '自动保存',
+      { confirmButtonText: '恢复', cancelButtonText: '丢弃', type: 'info' }
+    )
+  } catch {
+    localStorage.removeItem(autosaveKey.value)
+    return
+  }
+  form.title = snap.title || ''
+  form.categoryId = snap.categoryId ?? null
+  form.summary = snap.summary || ''
+  form.contentHtml = snap.contentHtml || ''
+  form.tags = snap.tags || []
+  form.scheduledAt = snap.scheduledAt || null
+  editorRef.value?.setHtml(snap.contentHtml || '')
+  autosaveAt.value = new Date(snap.savedAt)
+  ElMessage.success('已恢复本地草稿')
+}
+
+function clearSnapshot() {
+  if (autosaveTimer) clearTimeout(autosaveTimer)
+  dirty.value = false
+  try {
+    localStorage.removeItem(autosaveKey.value)
+  } catch {
+    // 忽略本地存储异常
+  }
+}
+
+function onBeforeUnload(event) {
+  if (!dirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+watch(() => [form.title, form.categoryId, form.summary, form.contentHtml,
+  form.tags, form.scheduledAt], scheduleAutosave, { deep: true })
+
 // ---------- 保存 ----------
 async function save(status) {
   if (!form.title.trim()) {
@@ -797,6 +909,8 @@ async function save(status) {
 
 /** 发布响应关怀分支（契约 5.8）：high → 危机页（文章已私密发布）；low/mid → 信笺/短笺 */
 function afterPublish(status, data) {
+  autosaveReady = false
+  clearSnapshot()
   if (status === 'published' && data?.care?.level === 'high') {
     router.push(`/care/crisis?article=${data.id}`)
     return
@@ -810,6 +924,7 @@ function afterPublish(status, data) {
 }
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', onBeforeUnload)
   try {
     categories.value = await categoryApi.list()
   } catch {
@@ -820,6 +935,7 @@ onMounted(async () => {
   } catch {
     tagOptions.value = []
   }
+  let serverUpdatedAt = null
   if (route.params.id) {
     articleId.value = route.params.id
     const detail = await articleApi.detail(articleId.value)
@@ -834,7 +950,10 @@ onMounted(async () => {
     form.contentHtml = detail.contentHtml || ''
     form.tags = detail.tags || []
     form.scheduledAt = detail.scheduledAt || null
+    serverUpdatedAt = detail.updatedAt
   }
+  await maybeRestoreSnapshot(serverUpdatedAt)
+  autosaveReady = true
 })
 </script>
 
@@ -926,7 +1045,15 @@ onMounted(async () => {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
+}
+
+.autosave-hint {
+  margin-left: 4px;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
 }
 
 /* ---------- AI 辅助栏 ---------- */

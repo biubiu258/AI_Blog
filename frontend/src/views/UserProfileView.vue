@@ -17,6 +17,8 @@
             <span>{{ profile.articleCount || 0 }} 篇文章</span>
             <span>{{ profile.followerCount || 0 }} 关注者</span>
             <span>{{ profile.followingCount || 0 }} 关注中</span>
+            <span>{{ stats.likeCount || 0 }} 获赞</span>
+            <span>{{ stats.totalViews || 0 }} 阅读</span>
           </div>
         </div>
         <el-button v-if="isSelf" @click="$router.push('/profile')">编辑资料</el-button>
@@ -82,7 +84,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { userApi } from '../api'
+import { userApi, statsApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -92,6 +94,7 @@ const loading = ref(false)
 const listLoading = ref(false)
 const followingBusy = ref(false)
 const profile = ref({})
+const stats = ref({})
 const articles = ref([])
 const people = ref([])
 const tab = ref('articles')
@@ -109,6 +112,11 @@ async function loadProfile() {
     profile.value = {}
   } finally {
     loading.value = false
+  }
+  try {
+    stats.value = await statsApi.author(userId.value)
+  } catch {
+    stats.value = {}
   }
 }
 

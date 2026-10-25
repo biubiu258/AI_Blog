@@ -49,11 +49,13 @@ public class NotificationService {
         notificationMapper.insert(n);
     }
 
-    public Map<String, Object> page(Long userId, int page, int size, boolean unreadOnly) {
+    public Map<String, Object> page(Long userId, int page, int size, boolean unreadOnly,
+                                    String type) {
         Page<Notification> result = notificationMapper.selectPage(Page.of(page, Math.min(size, 50)),
                 Wrappers.<Notification>lambdaQuery()
                         .eq(Notification::getUserId, userId)
                         .eq(unreadOnly, Notification::getIsRead, 0)
+                        .eq(Objects.nonNull(type) && !type.isBlank(), Notification::getType, type)
                         .orderByDesc(Notification::getCreatedAt));
         List<Notification> records = result.getRecords();
         Map<Long, User> actors = records.isEmpty() ? Map.of()
@@ -73,6 +75,7 @@ public class NotificationService {
                 .toList();
         Map<String, Object> resp = new HashMap<>();
         resp.put("total", result.getTotal());
+        resp.put("unread", unreadCount(userId));
         resp.put("items", items);
         return resp;
     }

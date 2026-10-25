@@ -13,9 +13,12 @@
         <el-radio-button value="scheduled">定时</el-radio-button>
         <el-radio-button value="private">仅自己可见</el-radio-button>
       </el-radio-group>
-      <el-button type="primary" @click="$router.push('/write')">
-        <el-icon><Plus /></el-icon>&nbsp;写文章
-      </el-button>
+      <div class="toolbar-actions">
+        <el-button @click="$router.push('/dashboard')">创作数据</el-button>
+        <el-button type="primary" @click="$router.push('/write')">
+          <el-icon><Plus /></el-icon>&nbsp;写文章
+        </el-button>
+      </div>
     </div>
 
     <el-empty v-if="!loading && items.length === 0" description="还没有文章" />
@@ -154,6 +157,12 @@ onMounted(() => load(1))
   justify-content: space-between;
   align-items: center;
   margin-bottom: 18px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 /* 状态筛选：墨块选中、纸面未选 */

@@ -58,13 +58,14 @@ public class SecurityConfig {
                         // “我的文章”必须登录（声明在通配符之前）
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/articles/mine")
                         .authenticated()
-                        // 公开读接口：文章列表/详情/阅读计数、分类与标签、评论、用户主页
+                        // 公开读接口：文章列表/详情/阅读计数、分类与标签、评论、用户主页、作者公开数据
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/articles", "/api/articles/*", "/api/articles/*/comments",
                                 "/api/articles/*/view", "/api/categories",
                                 "/api/tags", "/api/tags/*/articles",
                                 "/api/users/*", "/api/users/*/articles",
-                                "/api/users/*/followers", "/api/users/*/following").permitAll()
+                                "/api/users/*/followers", "/api/users/*/following",
+                                "/api/stats/author/*").permitAll()
                         // 静态资源：上传的图片；SEO 收录文件
                         .requestMatchers("/uploads/**", "/error", "/sitemap.xml", "/robots.txt")
                         .permitAll()

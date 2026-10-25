@@ -27,6 +27,7 @@ export const userApi = {
 export const articleApi = {
   list: (params) => request.get('/articles', { params }),
   mine: (params) => request.get('/articles/mine', { params }),
+  hot: (params) => request.get('/articles/hot', { params }),
   detail: (id) => request.get(`/articles/${id}`),
   create: (data) => request.post('/articles', data),
   update: (id, data) => request.put(`/articles/${id}`, data),
@@ -47,6 +48,10 @@ export const notificationApi = {
   list: (params) => request.get('/notifications', { params }),
   unreadCount: () => request.get('/notifications/unread-count'),
   markRead: (ids) => request.post('/notifications/read', { ids })
+}
+
+export const statsApi = {
+  author: (id) => request.get(`/stats/author/${id}`)
 }
 
 export const reportApi = {
