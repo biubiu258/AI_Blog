@@ -17,6 +17,14 @@
             <el-input v-model="form.summary" placeholder="摘要（可选）" maxlength="500"
                       style="flex: 1" />
           </div>
+          <div class="meta-row">
+            <el-select v-model="form.tags" multiple filterable allow-create default-first-option
+                       :multiple-limit="8" placeholder="标签（最多 8 个，可新建）" style="flex: 1">
+              <el-option v-for="t in tagOptions" :key="t.id" :label="t.name" :value="t.name" />
+            </el-select>
+            <el-date-picker v-model="form.scheduledAt" type="datetime" placeholder="定时发布时间"
+                            value-format="YYYY-MM-DDTHH:mm:ss" style="width: 200px" />
+          </div>
           <Toolbar class="editor-toolbar" :editor="editorRef" :defaultConfig="toolbarConfig"
                    mode="default" />
           <Editor class="editor-content" v-model="form.contentHtml" :defaultConfig="editorConfig"
@@ -26,6 +34,8 @@
             <el-button type="primary" :loading="saving" @click="save('published')">
               {{ articleId ? '保存并发布' : '直接发布' }}
             </el-button>
+            <el-button :loading="saving" @click="save('scheduled')">定时发布</el-button>
+            <el-button v-if="articleId" link @click="openVersions">版本历史</el-button>
           </div>
         </el-card>
       </el-col>
@@ -165,6 +175,20 @@
       </el-col>
     </el-row>
 
+    <el-drawer v-model="versionDrawer" title="版本历史" size="420px">
+      <div v-loading="versionLoading" class="version-list">
+        <el-empty v-if="!versionLoading && !versions.length" :image-size="56"
+                  description="暂无历史版本，每次保存前会自动留档" />
+        <div v-for="v in versions" :key="v.id" class="version-item">
+          <div class="version-main">
+            <div class="version-title">{{ v.title || '无标题' }}</div>
+            <div class="version-time">{{ formatDate(v.savedAt) }}</div>
+          </div>
+          <el-button link type="primary" @click="restoreVersion(v)">载入</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
     <AiSelectionMenu :visible="selectionMenu.visible" :x="selectionMenu.x" :y="selectionMenu.y"
                      :loading="selectionLoading" @ask="askSelection" />
   </div>
@@ -173,14 +197,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 import '@wangeditor/editor/dist/css/style.css'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { articleApi, categoryApi } from '../api'
+import { articleApi, categoryApi, tagApi } from '../api'
 import request from '../api/request'
-import { aiGenerate, aiReview } from '../api/ai'
+import { aiAdopt, aiGenerate, aiReview } from '../api/ai'
 import AiSelectionMenu from '../components/AiSelectionMenu.vue'
 import AiSuggestionPanel from '../components/AiSuggestionPanel.vue'
 import {
@@ -201,8 +225,66 @@ const auth = useAuthStore()
 
 const articleId = ref(null)
 const categories = ref([])
+const tagOptions = ref([])
 const saving = ref(false)
-const form = reactive({ title: '', categoryId: null, summary: '', contentHtml: '' })
+const form = reactive({
+  title: '',
+  categoryId: null,
+  summary: '',
+  contentHtml: '',
+  tags: [],
+  scheduledAt: null
+})
+
+// ---------- 版本历史 ----------
+const versionDrawer = ref(false)
+const versionLoading = ref(false)
+const versions = ref([])
+
+async function openVersions() {
+  if (!articleId.value) return
+  versionDrawer.value = true
+  versionLoading.value = true
+  try {
+    versions.value = await articleApi.versions(articleId.value)
+  } catch {
+    versions.value = []
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+async function restoreVersion(version) {
+  try {
+    await ElMessageBox.confirm(
+      `将用 ${formatDate(version.savedAt)} 的版本覆盖当前编辑内容，是否继续？`,
+      '载入历史版本',
+      { type: 'warning', confirmButtonText: '载入', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  try {
+    const detail = await articleApi.version(articleId.value, version.id)
+    form.title = detail.title || ''
+    form.summary = detail.summary || ''
+    form.contentHtml = detail.contentHtml || ''
+    editorRef.value?.setHtml(detail.contentHtml || '')
+    form.tags = form.tags || []
+    versionDrawer.value = false
+    ElMessage.success('已载入历史版本，保存后才会生效')
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+function formatDate(value) {
+  if (!value) return '-'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // ---------- 富文本编辑器 ----------
 const editorRef = shallowRef(null)
@@ -418,6 +500,7 @@ function applySelectionSuggestion() {
     return
   }
   ElMessage.success('已替换选中内容，可用 Ctrl+Z 撤销')
+  aiAdopt('generate')
   selectionSnapshot.value = null
   selectionResult.value = ''
 }
@@ -543,6 +626,7 @@ function applySuggestion(index) {
     return
   }
   ElMessage.success('已替换，可用 Ctrl+Z 撤销')
+  aiAdopt('review')
   reviewSuggestions.value.splice(index, 1)
   refreshReviewHighlights()
 }
@@ -684,6 +768,10 @@ async function save(status) {
     ElMessage.warning('请输入文章标题')
     return
   }
+  if (status === 'scheduled' && !form.scheduledAt) {
+    ElMessage.warning('请先选择定时发布时间')
+    return
+  }
   saving.value = true
   try {
     const payload = {
@@ -691,7 +779,9 @@ async function save(status) {
       categoryId: form.categoryId || undefined,
       contentHtml: form.contentHtml,
       summary: form.summary || undefined,
-      status
+      status,
+      tags: form.tags,
+      scheduledAt: status === 'scheduled' ? form.scheduledAt : undefined
     }
     let data
     if (articleId.value) {
@@ -714,7 +804,8 @@ function afterPublish(status, data) {
   if (status === 'published' && (data?.care?.level === 'low' || data?.care?.level === 'mid')) {
     emitCare({ level: data.care.level, summary: data.care.summary })
   }
-  ElMessage.success(status === 'published' ? '发布成功' : '草稿已保存')
+  if (status === 'scheduled') ElMessage.success('已加入定时发布')
+  else ElMessage.success(status === 'published' ? '发布成功' : '草稿已保存')
   router.push('/my')
 }
 
@@ -723,6 +814,11 @@ onMounted(async () => {
     categories.value = await categoryApi.list()
   } catch {
     categories.value = []
+  }
+  try {
+    tagOptions.value = await tagApi.list()
+  } catch {
+    tagOptions.value = []
   }
   if (route.params.id) {
     articleId.value = route.params.id
@@ -736,6 +832,8 @@ onMounted(async () => {
     form.categoryId = detail.categoryId
     form.summary = detail.summary || ''
     form.contentHtml = detail.contentHtml || ''
+    form.tags = detail.tags || []
+    form.scheduledAt = detail.scheduledAt || null
   }
 })
 </script>
@@ -921,6 +1019,28 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* 版本历史 */
+.version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.version-title {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.version-time {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
 }
 
 @media (max-width: 900px) {

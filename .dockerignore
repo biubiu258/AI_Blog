@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/target
+**/dist
+AI_Service/data
+AI_Service/.venv
+AI_Service/.env
+frontend/playwright-report
+frontend/test-results

@@ -22,6 +22,15 @@ public class Comment {
     /** 评论内容（纯文本） */
     private String content;
 
+    /** 父评论 id，NULL 为一级评论（两级结构，回复的回复归入同一父） */
+    private Long parentId;
+
+    /** 被回复用户 */
+    private Long replyToUserId;
+
+    /** approved / hidden */
+    private String status;
+
     @TableLogic
     private Integer deleted;
 

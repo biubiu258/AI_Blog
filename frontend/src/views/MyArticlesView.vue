@@ -10,6 +10,7 @@
         <el-radio-button value="">全部</el-radio-button>
         <el-radio-button value="draft">草稿</el-radio-button>
         <el-radio-button value="published">已发布</el-radio-button>
+        <el-radio-button value="scheduled">定时</el-radio-button>
         <el-radio-button value="private">仅自己可见</el-radio-button>
       </el-radio-group>
       <el-button type="primary" @click="$router.push('/write')">
@@ -33,9 +34,12 @@
         <el-table-column label="分类" width="110">
           <template #default="{ row }">{{ row.categoryName || '-' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="110">
+        <el-table-column label="状态" width="150">
           <template #default="{ row }">
             <el-tag v-if="row.status === 'published'" type="success" size="small" effect="plain">已发布</el-tag>
+            <el-tag v-else-if="row.status === 'scheduled'" type="info" size="small" effect="plain">
+              定时 {{ formatDate(row.scheduledAt) }}
+            </el-tag>
             <el-tag v-else-if="row.status === 'private'" type="info" size="small" effect="plain">仅自己可见</el-tag>
             <el-tag v-else type="warning" size="small" effect="plain">草稿</el-tag>
           </template>
@@ -48,8 +52,8 @@
             <el-button link type="primary" @click="$router.push(`/write/${row.id}`)">编辑</el-button>
             <el-button v-if="row.status === 'draft' || row.status === 'private'" link type="success"
                        @click="publish(row)">{{ row.status === 'private' ? '重新发布' : '发布' }}</el-button>
-            <el-button v-if="row.status === 'published'" link type="warning"
-                       @click="withdraw(row)">撤回</el-button>
+            <el-button v-if="row.status === 'published' || row.status === 'scheduled'" link type="warning"
+                       @click="withdraw(row)">{{ row.status === 'scheduled' ? '取消定时' : '撤回' }}</el-button>
             <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -101,6 +105,7 @@ async function publish(row) {
     categoryId: detail.categoryId,
     contentHtml: detail.contentHtml,
     summary: detail.summary,
+    tags: detail.tags || [],
     status: 'published'
   })
   // 关怀分支：high 已私密发布 → 危机页；low/mid → 信笺/短笺
@@ -122,6 +127,7 @@ async function withdraw(row) {
     categoryId: detail.categoryId,
     contentHtml: detail.contentHtml,
     summary: detail.summary,
+    tags: detail.tags || [],
     status: 'draft'
   })
   ElMessage.success('已撤回为草稿')

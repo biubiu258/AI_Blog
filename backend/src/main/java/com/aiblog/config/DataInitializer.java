@@ -6,6 +6,7 @@ import com.aiblog.mapper.CategoryMapper;
 import com.aiblog.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,18 +26,24 @@ public class DataInitializer {
     private final CategoryMapper categoryMapper;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${app.init.admin-username:admin}")
+    private String adminUsername;
+
+    @Value("${app.init.admin-password:admin123}")
+    private String adminPassword;
+
     @Bean
     public ApplicationRunner initAdminAndCategories() {
         return args -> {
             if (userMapper.selectCount(null) == 0) {
                 User admin = new User();
-                admin.setUsername("admin");
-                admin.setPasswordHash(passwordEncoder.encode("admin123"));
+                admin.setUsername(adminUsername);
+                admin.setPasswordHash(passwordEncoder.encode(adminPassword));
                 admin.setNickname("管理员");
                 admin.setRole("ADMIN");
                 admin.setStatus(0);
                 userMapper.insert(admin);
-                log.info("已创建默认管理员: admin / admin123（请尽快修改密码）");
+                log.info("已创建默认管理员: {}（请尽快修改密码）", adminUsername);
             }
             if (categoryMapper.selectCount(null) == 0) {
                 List.of("技术教程", "AI 工具", "随笔", "生活").forEach(name -> {

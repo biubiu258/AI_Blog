@@ -33,7 +33,17 @@
               <el-input v-model="form.nickname" maxlength="64" />
             </el-form-item>
             <el-form-item label="邮箱">
-              <el-input v-model="form.email" />
+              <div class="email-row">
+                <el-input v-model="form.email" />
+                <el-tag v-if="emailVerified" type="success" size="small">已验证</el-tag>
+                <el-button v-else size="small" :loading="sendingCode"
+                           :disabled="!form.email" @click="sendCode">发验证码</el-button>
+              </div>
+              <div v-if="codeSent && !emailVerified" class="code-row">
+                <el-input v-model="emailCode" placeholder="6 位验证码" maxlength="6" />
+                <el-button size="small" :loading="verifying" @click="verifyEmail">验证</el-button>
+              </div>
+              <div v-if="devCode" class="dev-hint">开发模式验证码：{{ devCode }}</div>
             </el-form-item>
             <el-form-item label="简介">
               <el-input v-model="form.bio" type="textarea" :rows="3" maxlength="500" show-word-limit />
@@ -81,7 +91,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { fileApi, userApi } from '../api'
+import { authApi, fileApi, userApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -89,6 +99,45 @@ const saving = ref(false)
 const savingPref = ref(false)
 const form = reactive({ nickname: '', email: '', bio: '', avatarUrl: '' })
 const pref = reactive({ tone: '', targetReader: '', structure: '', extra: '' })
+const emailVerified = ref(false)
+const codeSent = ref(false)
+const emailCode = ref('')
+const devCode = ref('')
+const sendingCode = ref(false)
+const verifying = ref(false)
+
+async function sendCode() {
+  sendingCode.value = true
+  try {
+    const res = await authApi.sendEmailCode()
+    codeSent.value = true
+    devCode.value = res.devCode || ''
+    ElMessage.success('验证码已发送到邮箱')
+  } finally {
+    sendingCode.value = false
+  }
+}
+
+async function verifyEmail() {
+  if (!emailCode.value.trim()) {
+    ElMessage.warning('请输入验证码')
+    return
+  }
+  verifying.value = true
+  try {
+    await authApi.verifyEmail({ code: emailCode.value.trim() })
+    emailVerified.value = true
+    codeSent.value = false
+    devCode.value = ''
+    if (auth.user) {
+      auth.user.emailVerified = 1
+      localStorage.setItem('user', JSON.stringify(auth.user))
+    }
+    ElMessage.success('邮箱验证成功')
+  } finally {
+    verifying.value = false
+  }
+}
 
 async function uploadAvatar({ file }) {
   const fd = new FormData()
@@ -129,6 +178,7 @@ onMounted(async () => {
       bio: me.bio || '',
       avatarUrl: me.avatarUrl || ''
     })
+    emailVerified.value = me.emailVerified === 1
     auth.user = me
   } catch { /* 拦截器已处理 */
   }
@@ -166,6 +216,30 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+.email-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.email-row :deep(.el-input) {
+  flex: 1;
+}
+.code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+}
+.code-row :deep(.el-input) {
+  flex: 1;
+}
+.dev-hint {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--cinnabar);
 }
 .avatar-row :deep(.el-avatar) {
   border: 1px solid var(--hairline-dark);

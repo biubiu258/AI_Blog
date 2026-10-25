@@ -75,7 +75,8 @@ public class AuthService {
         }
         lazyUnlockIfNeeded(user);
         rateLimiter.reset(request.getUsername(), clientIp);
-        String token = tokenProvider.generate(user.getId(), user.getUsername(), user.getRole());
+        String token = tokenProvider.generate(user.getId(), user.getUsername(), user.getRole(),
+                user.getTokenVersion());
         return new LoginResponse(token, UserInfoResponse.from(user));
     }
 

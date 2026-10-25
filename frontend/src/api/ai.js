@@ -9,6 +9,11 @@ export function aiReview(data) {
   return request.post('/ai/review', data, { timeout: 65000 })
 }
 
+/** 建议被采纳（一键替换后调用），用于统计采纳率；失败不影响主流程 */
+export function aiAdopt(action = 'review') {
+  return request.post('/ai/adopt', { action }).catch(() => {})
+}
+
 /**
  * AI 生成（POST + JSON 接收 SSE，契约 5.4.6）。
  * 原生 EventSource 不支持 POST/自定义头，这里使用 @microsoft/fetch-event-source。

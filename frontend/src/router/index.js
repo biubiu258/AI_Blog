@@ -13,6 +13,11 @@ const routes = [
         component: () => import('../views/ArticleDetailView.vue')
       },
       {
+        path: 'user/:id',
+        name: 'user-profile',
+        component: () => import('../views/UserProfileView.vue')
+      },
+      {
         path: 'write',
         name: 'write',
         component: () => import('../views/WriteView.vue'),
@@ -37,6 +42,12 @@ const routes = [
         meta: { requiresAuth: true }
       },
       {
+        path: 'notifications',
+        name: 'notifications',
+        component: () => import('../views/NotificationsView.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
         path: 'profile',
         name: 'profile',
         component: () => import('../views/ProfileView.vue'),
@@ -52,6 +63,11 @@ const routes = [
   },
   { path: '/login', name: 'login', component: () => import('../views/LoginView.vue') },
   { path: '/register', name: 'register', component: () => import('../views/RegisterView.vue') },
+  {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: () => import('../views/ForgotPasswordView.vue')
+  },
   {
     // 危机关怀页：独立全屏、不套 Layout、未登录可开
     path: '/care/crisis',

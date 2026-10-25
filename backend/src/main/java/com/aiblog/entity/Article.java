@@ -26,10 +26,16 @@ public class Article {
 
     private String summary;
 
-    /** draft / published */
+    /** draft / published / private / scheduled */
     private String status;
 
     private LocalDateTime publishedAt;
+
+    /** 定时发布时间（status=scheduled 时有效） */
+    private LocalDateTime scheduledAt;
+
+    /** 阅读量 */
+    private Integer viewCount;
 
     @TableLogic
     private Integer deleted;

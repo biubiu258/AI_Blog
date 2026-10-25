@@ -34,6 +34,11 @@
 
         <div class="header-right">
           <template v-if="auth.isLoggedIn">
+            <el-badge :value="unread" :hidden="unread === 0" :max="99" class="notif-badge">
+              <button class="notif-btn" title="通知" @click="$router.push('/notifications')">
+                <el-icon><Bell /></el-icon>
+              </button>
+            </el-badge>
             <el-dropdown @command="onCommand">
               <span class="user-entry">
                 <el-avatar :size="30" :src="auth.user?.avatarUrl || undefined">
@@ -79,15 +84,61 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { notificationApi } from '../api'
 import CareNote from '../care/CareNote.vue'
 import CareDialog from '../care/CareDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+
+const unread = ref(0)
+let timer = null
+
+async function refreshUnread() {
+  if (!auth.isLoggedIn) {
+    unread.value = 0
+    return
+  }
+  try {
+    const res = await notificationApi.unreadCount()
+    unread.value = res.count || 0
+  } catch {
+    // 轮询失败静默，不打断当前操作
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  if (!auth.isLoggedIn) {
+    unread.value = 0
+    return
+  }
+  refreshUnread()
+  timer = setInterval(refreshUnread, 30000)
+}
+
+function stopPolling() {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+}
+
+// 通知页读完后通过 window 事件刷新徽标
+function onNotificationsRead() {
+  refreshUnread()
+}
+
+watch(() => auth.isLoggedIn, startPolling, { immediate: true })
+window.addEventListener('notifications:read', onNotificationsRead)
+onUnmounted(() => {
+  stopPolling()
+  window.removeEventListener('notifications:read', onNotificationsRead)
+})
 
 const activeMenu = computed(() => '/' + (route.path.split('/')[1] || ''))
 
@@ -235,6 +286,28 @@ async function onCommand(command) {
   gap: 8px;
   cursor: pointer;
   color: var(--ink);
+}
+
+/* 通知铃铛 */
+.notif-badge :deep(.el-badge__content) {
+  border: none;
+}
+.notif-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+.notif-btn:hover {
+  color: var(--cinnabar);
 }
 .user-name {
   max-width: 120px;

@@ -26,6 +26,7 @@
         <el-form-item label="密码" prop="password">
           <el-input v-model="form.password" type="password" show-password placeholder="请输入密码"
                     @keyup.enter="submit" />
+          <router-link to="/forgot-password" class="forgot-link">忘记密码？</router-link>
         </el-form-item>
         <el-form-item label="验证码" prop="captchaCode">
           <div class="captcha-row">
@@ -230,6 +231,17 @@ onMounted(loadCaptcha)
 .auth-btn {
   width: 100%;
   letter-spacing: 0.4em;
+}
+.forgot-link {
+  margin-top: 4px;
+  align-self: flex-end;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.forgot-link:hover {
+  color: var(--cinnabar);
 }
 
 .captcha-row {
