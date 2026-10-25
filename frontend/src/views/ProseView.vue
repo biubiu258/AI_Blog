@@ -5,32 +5,15 @@
       <div class="page-sub">PROSE · 以影寄情</div>
     </header>
     <el-row :gutter="16">
-      <!-- 左侧：素材（图片 + 情绪 / 近况） -->
-      <el-col :span="10">
-        <el-card shadow="never" class="panel-card">
+      <!-- 左侧：素材（风格 + 情绪 + 近况 + 图片） -->
+      <el-col :span="10" class="material-col">
+        <el-card shadow="never" class="panel-card material-card">
           <template #header>
             <div class="card-header">
               <span>素材</span>
               <el-tag size="small" type="info">图片选填，最多 5 张</el-tag>
             </div>
           </template>
-
-          <el-upload :show-file-list="false" :limit="5" :http-request="uploadImage"
-                     accept="image/jpeg,image/png,image/gif,image/webp"
-                     :on-exceed="onExceed">
-            <el-button :disabled="images.length >= 5" :loading="uploading">
-              <el-icon><Plus /></el-icon>
-              添加图片（{{ images.length }}/5）
-            </el-button>
-          </el-upload>
-          <div class="hint">可以是人物照、风景照，或任何触动你的画面</div>
-
-          <div v-if="images.length" class="thumbs">
-            <div v-for="img in images" :key="img.url" class="thumb-item">
-              <img :src="img.url" :alt="img.name" />
-              <el-icon class="thumb-remove" @click="removeImage(img.url)"><Close /></el-icon>
-            </div>
-          </div>
 
           <el-form label-position="top" class="material-form">
             <el-form-item label="散文风格">
@@ -42,6 +25,11 @@
             <el-form-item label="此刻的情绪">
               <el-input v-model="emotion" maxlength="200" show-word-limit
                         placeholder="如：平静、疲惫、怅然若失…" />
+              <div class="emotion-chips">
+                <button v-for="word in emotionPresets" :key="word" type="button"
+                        class="emotion-chip" :class="{ active: emotion === word }"
+                        @click="emotion = word">{{ word }}</button>
+              </div>
             </el-form-item>
             <el-form-item label="近况 / 想说的">
               <el-input v-model="recentState" type="textarea" :rows="5" maxlength="1000"
@@ -49,14 +37,34 @@
             </el-form-item>
           </el-form>
 
+          <el-upload drag multiple :show-file-list="false" :limit="5" :http-request="uploadImage"
+                     accept="image/jpeg,image/png,image/gif,image/webp" :on-exceed="onExceed"
+                     :disabled="images.length >= 5 || uploading" class="upload-drop">
+            <el-icon class="upload-icon"><Plus /></el-icon>
+            <div class="upload-text">
+              {{ uploading ? '上传中…' : `点击或拖拽图片到此处（${images.length}/5）` }}
+            </div>
+          </el-upload>
+          <div class="hint">可以是人物照、风景照，或任何触动你的画面</div>
+
+          <div v-if="images.length" class="thumbs">
+            <div v-for="img in images" :key="img.url" class="thumb-item">
+              <img :src="img.url" :alt="img.name" />
+              <el-icon class="thumb-remove" @click="removeImage(img.url)"><Close /></el-icon>
+            </div>
+          </div>
+
           <div class="actions">
-            <el-button type="primary" :loading="generating" :disabled="generating || !canGenerate"
-                       @click="startGenerate">生成散文初稿</el-button>
-            <el-button v-if="generating" type="danger" @click="stopGenerate">停止生成</el-button>
+            <el-button type="primary" size="large" class="generate-btn" :loading="generating"
+                       :disabled="generating || !canGenerate" @click="startGenerate">
+              {{ outputMd ? '重新生成散文' : '生成散文初稿' }}
+            </el-button>
+            <el-button v-if="generating" type="danger" @click="stopGenerate">停止</el-button>
           </div>
           <div v-if="!canGenerate && !generating" class="hint">
             填写情绪或近况其一即可生成；图片可选
           </div>
+          <div v-if="materialRestored" class="hint">已恢复上次未完成的素材</div>
         </el-card>
       </el-col>
 
@@ -70,9 +78,8 @@
                 <el-tag size="small" :type="generating ? 'warning' : 'info'">
                   {{ generating ? '流式生成中' : (editing ? '编辑中' : 'SSE 流式') }}
                 </el-tag>
-                <el-button v-if="outputMd && !generating" size="small" @click="toggleEditing">
-                  {{ editing ? '完成编辑' : '编辑初稿' }}
-                </el-button>
+                <el-segmented v-if="outputMd && !generating" v-model="viewMode" size="small"
+                              :options="viewModeOptions" />
               </div>
             </div>
           </template>
@@ -82,8 +89,13 @@
             正在生成，已接收 {{ outputMd.length }} 字…
           </div>
 
+          <template v-if="outputMd && !generating">
+            <el-input v-model="title" maxlength="200" placeholder="给这篇散文起个标题"
+                      class="title-input" />
+          </template>
+
           <template v-if="editing">
-            <el-input ref="draftTextarea" v-model="outputMd" type="textarea" :rows="18"
+            <el-input ref="draftTextarea" v-model="outputMd" type="textarea" :rows="16"
                       class="draft-editor" placeholder="在此修改初稿…"
                       @select="onDraftSelect" @keyup="onDraftSelect" @mouseup="onDraftSelect"
                       @input="onDraftInput" />
@@ -115,15 +127,13 @@
             </template>
           </template>
           <template v-else>
-            <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
+            <div v-if="outputMd" ref="previewBodyRef" class="markdown-body result-body preview-body"
+                 v-html="renderedOutput"></div>
             <el-empty v-else description="写下情绪或近况，点击生成；配图更有画面感" />
           </template>
 
           <template v-if="outputMd && !generating">
-            <el-form-item label="标题" class="title-item">
-              <el-input v-model="title" maxlength="200" placeholder="保存前可修改标题" />
-            </el-form-item>
-            <div class="result-actions">
+            <div class="result-actions save-actions">
               <el-button size="small" type="primary" :loading="saving" @click="saveDraft">
                 存为草稿并继续编辑
               </el-button>
@@ -148,9 +158,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { articleApi, fileApi } from '../api'
@@ -165,10 +175,13 @@ const style = ref('luxun')
 const emotion = ref('')
 const recentState = ref('')
 
+const emotionPresets = ['平静', '疲惫', '怅然', '思念', '喜悦', '释然', '焦躁', '感激']
+
 const generating = ref(false)
 const outputMd = ref('')
 const title = ref('')
 const saving = ref(false)
+const previewBodyRef = ref(null)
 let abortController = null
 
 // ---------- 初稿编辑与划词建议 ----------
@@ -179,6 +192,15 @@ const draftMode = ref('advice')
 const draftLoading = ref(false)
 const draftResult = ref('')
 let draftAbort = null
+
+const viewModeOptions = [
+  { label: '预览', value: 'preview' },
+  { label: '编辑', value: 'edit' }
+]
+const viewMode = computed({
+  get: () => (editing.value ? 'edit' : 'preview'),
+  set: (value) => setEditing(value === 'edit')
+})
 
 const draftModes = [
   { mode: 'advice', label: '给建议' },
@@ -205,8 +227,8 @@ function renderMarkdown(md) {
   }
 }
 
-function toggleEditing() {
-  editing.value = !editing.value
+function setEditing(value) {
+  editing.value = value
   draftSelection.value = null
   draftResult.value = ''
 }
@@ -353,7 +375,7 @@ async function locateDraftSuggestion(index) {
     ElMessage.warning('原文已修改，本条无法定位')
     return
   }
-  if (!editing.value) editing.value = true
+  if (!editing.value) setEditing(true)
   await nextTick()
   const el = textareaEl()
   if (!el) return
@@ -397,6 +419,57 @@ onBeforeUnmount(() => {
   if (draftAbort) draftAbort.abort()
 })
 
+// ---------- 素材本地暂存（刷新不丢；保存草稿后清除） ----------
+const MATERIAL_KEY = 'aiblog:prose:material'
+const materialRestored = ref(false)
+
+function persistMaterial() {
+  try {
+    if (!emotion.value && !recentState.value && !images.value.length) return
+    localStorage.setItem(MATERIAL_KEY, JSON.stringify({
+      style: style.value,
+      emotion: emotion.value,
+      recentState: recentState.value,
+      images: images.value
+    }))
+  } catch {
+    // 本地存储不可用时静默降级
+  }
+}
+
+function restoreMaterial() {
+  let raw = null
+  try {
+    raw = localStorage.getItem(MATERIAL_KEY)
+  } catch {
+    return
+  }
+  if (!raw) return
+  try {
+    const snap = JSON.parse(raw)
+    if (snap?.style) style.value = snap.style
+    if (snap?.emotion) emotion.value = snap.emotion
+    if (snap?.recentState) recentState.value = snap.recentState
+    if (Array.isArray(snap?.images)) images.value = snap.images.filter((i) => i?.url)
+    materialRestored.value = !!(snap?.emotion || snap?.recentState || images.value.length)
+  } catch {
+    localStorage.removeItem(MATERIAL_KEY)
+  }
+}
+
+function clearMaterial() {
+  materialRestored.value = false
+  try {
+    localStorage.removeItem(MATERIAL_KEY)
+  } catch {
+    // 忽略本地存储异常
+  }
+}
+
+watch([style, emotion, recentState, images], persistMaterial, { deep: true })
+
+onMounted(restoreMaterial)
+
 // ---------- 图片上传 ----------
 async function uploadImage(options) {
   const fd = new FormData()
@@ -437,9 +510,23 @@ function buildPayload() {
 }
 
 async function startGenerate() {
+  // 已有初稿时重新生成前先确认，避免覆盖未保存的手工修改
+  if (outputMd.value && !generating.value) {
+    try {
+      await ElMessageBox.confirm(
+        '重新生成将丢弃当前初稿（含手工修改），是否继续？',
+        '重新生成',
+        { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+  }
   generating.value = true
   outputMd.value = ''
   title.value = ''
+  reviewSuggestions.value = []
+  setEditing(false)
   abortController = new AbortController()
   try {
     // delta 追加；done 用完整文本整体替换（契约 5.4.3）
@@ -487,7 +574,7 @@ function stopGenerate() {
 
 async function scrollResult() {
   await nextTick()
-  const el = document.querySelector('.result-body')
+  const el = previewBodyRef.value
   if (el) el.scrollTop = el.scrollHeight
 }
 
@@ -532,6 +619,7 @@ async function saveDraft() {
       summary: deriveSummary(outputMd.value),
       status: 'draft'
     })
+    clearMaterial()
     ElMessage.success('草稿已保存')
     router.push(`/write/${created.id}`)
   } finally {
@@ -560,6 +648,7 @@ async function saveDraft() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   letter-spacing: 0.08em;
 }
 .hint {
@@ -569,6 +658,77 @@ async function saveDraft() {
   line-height: 1.6;
   letter-spacing: 0.04em;
 }
+
+/* ---------- 素材栏 ---------- */
+.material-col {
+  align-self: flex-start;
+  position: sticky;
+  top: 20px;
+}
+.material-form :deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+.emotion-chips {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.emotion-chip {
+  padding: 2px 10px;
+  border: 1px solid var(--hairline-dark);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.emotion-chip:hover {
+  border-color: var(--cinnabar);
+  color: var(--cinnabar);
+}
+.emotion-chip.active {
+  background: var(--cinnabar);
+  border-color: var(--cinnabar);
+  color: #fdfbf4;
+}
+
+/* 拖拽上传区 */
+.upload-drop :deep(.el-upload) {
+  width: 100%;
+}
+.upload-drop :deep(.el-upload-dragger) {
+  width: 100%;
+  padding: 18px 12px;
+  background: var(--paper-deep);
+  border: 1px dashed var(--hairline-dark);
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: border-color 0.2s ease;
+}
+.upload-drop :deep(.el-upload-dragger:hover) {
+  border-color: var(--cinnabar);
+}
+.upload-drop :deep(.el-upload.is-disabled .el-upload-dragger) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.upload-icon {
+  font-size: 20px;
+  color: var(--ink-faint);
+}
+.upload-text {
+  font-size: 13px;
+  color: var(--ink-soft);
+  letter-spacing: 0.05em;
+}
+
 .thumbs {
   display: flex;
   flex-wrap: wrap;
@@ -601,15 +761,51 @@ async function saveDraft() {
   cursor: pointer;
   font-size: 12px;
 }
-.material-form {
-  margin-top: 16px;
-}
 .actions {
+  margin-top: 16px;
   display: flex;
   gap: 8px;
 }
+.generate-btn {
+  flex: 1;
+}
+
+/* ---------- 初稿栏 ---------- */
 .result-card {
   min-height: 420px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-actions :deep(.el-segmented) {
+  --el-segmented-bg-color: var(--paper-deep);
+  --el-segmented-item-selected-bg-color: var(--cinnabar);
+  --el-segmented-item-selected-color: #fdfbf4;
+  font-family: var(--font-serif);
+}
+.title-input {
+  margin-bottom: 12px;
+}
+.title-input :deep(.el-input__wrapper) {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--hairline-dark);
+  padding-left: 2px;
+  padding-right: 2px;
+  transition: border-color 0.25s ease;
+}
+.title-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: none !important;
+  border-bottom-color: var(--cinnabar);
+}
+.title-input :deep(.el-input__inner) {
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--ink);
 }
 .stream-tip {
   color: var(--ink-faint);
@@ -629,20 +825,18 @@ async function saveDraft() {
   font-size: 14px;
   background: var(--paper-deep);
 }
-.title-item {
-  margin-top: 12px;
+.preview-body {
+  min-height: 260px;
 }
 .result-actions {
   display: flex;
   gap: 6px;
 }
+.save-actions {
+  margin-top: 12px;
+}
 
 /* ---------- 初稿编辑 / 划词建议 ---------- */
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .draft-editor :deep(.el-textarea__inner) {
   font-family: var(--font-serif);
   font-size: 14px;
@@ -698,6 +892,9 @@ async function saveDraft() {
     max-width: 100%;
     flex: 0 0 100%;
     margin-bottom: 16px;
+  }
+  .material-col {
+    position: static;
   }
 }
 </style>

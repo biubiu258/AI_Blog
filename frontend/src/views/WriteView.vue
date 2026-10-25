@@ -1,18 +1,17 @@
 <template>
   <div class="write-page">
-    <!-- 吸顶操作栏：文档状态与保存动作常驻，不必滚动到底部 -->
+    <!-- 吸顶操作栏：状态与保存动作常驻，不再滚动到文尾找按钮 -->
     <div class="write-topbar">
       <div class="topbar-left">
         <span class="topbar-title">写作</span>
-        <span class="doc-badge">{{ docStatusText }}</span>
+        <span class="doc-badge">{{ articleId ? '编辑中' : '新草稿' }}</span>
         <span v-if="autosaveText" class="autosave-hint">{{ autosaveText }}</span>
       </div>
       <div class="topbar-right">
         <span class="word-count">{{ wordCount }} 字</span>
         <el-button v-if="articleId" link size="small" @click="openVersions">版本历史</el-button>
-        <el-button size="small" :loading="saving" title="Ctrl / ⌘ + S" @click="save('draft')">
-          存草稿
-        </el-button>
+        <el-button size="small" :loading="saving" title="Ctrl / ⌘ + S"
+                   @click="save('draft')">存草稿</el-button>
         <el-popover v-model="scheduleOpen" placement="bottom-end" :width="260" trigger="click">
           <template #reference>
             <el-button size="small" :loading="saving">定时</el-button>
@@ -22,9 +21,8 @@
             <el-date-picker v-model="form.scheduledAt" type="datetime" placeholder="选择发布时间"
                             value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" />
             <el-button type="primary" size="small" class="schedule-confirm"
-                       :disabled="!form.scheduledAt" :loading="saving" @click="confirmSchedule">
-              确认定时发布
-            </el-button>
+                       :disabled="!form.scheduledAt" :loading="saving"
+                       @click="confirmSchedule">确认定时发布</el-button>
           </div>
         </el-popover>
         <el-button size="small" type="primary" :loading="saving" @click="save('published')">
@@ -35,8 +33,8 @@
 
     <el-row :gutter="16">
       <!-- 左侧：文章编辑 -->
-      <el-col :span="16" class="editor-col">
-        <el-card shadow="never" class="panel-card editor-card">
+      <el-col :span="16">
+        <el-card shadow="never" class="panel-card">
           <el-input v-model="form.title" placeholder="请输入文章标题" class="title-input"
                     maxlength="200" />
           <div class="meta-row">
@@ -49,13 +47,16 @@
             </el-select>
           </div>
           <div class="meta-row">
-            <el-input v-model="form.summary" placeholder="摘要（可选，不填则发布时由正文截取）"
+            <el-input v-model="form.summary" placeholder="摘要（可选，不填则发布时由正文提取）"
                       maxlength="500" />
           </div>
           <Toolbar class="editor-toolbar" :editor="editorRef" :defaultConfig="toolbarConfig"
                    mode="default" />
           <Editor class="editor-content" v-model="form.contentHtml" :defaultConfig="editorConfig"
                   mode="default" @onCreated="handleCreated" />
+          <div class="editor-foot">
+            <span class="hint">支持 Markdown 粘贴；Ctrl / ⌘ + S 快速存草稿</span>
+          </div>
         </el-card>
       </el-col>
 
@@ -125,7 +126,8 @@
                 正在生成，已接收 {{ outputMd.length }} 字…
               </div>
               <!-- 流式 Markdown 渲染（打字机效果来自逐帧 delta） -->
-              <div v-if="outputMd" class="markdown-body result-body" v-html="renderedOutput"></div>
+              <div v-if="outputMd" ref="resultBodyRef" class="markdown-body result-body"
+                   v-html="renderedOutput"></div>
 
               <div v-if="!generating && outputMd" class="result-actions">
                 <el-button size="small" @click="appendResultToEditor">插入编辑器末尾</el-button>
@@ -256,9 +258,6 @@ const form = reactive({
   scheduledAt: null
 })
 
-const docStatusText = computed(() =>
-  articleId.value ? `编辑中 · #${articleId.value}` : '新草稿')
-
 // ---------- 版本历史 ----------
 const versionDrawer = ref(false)
 const versionLoading = ref(false)
@@ -295,7 +294,6 @@ async function restoreVersion(version) {
     editorRef.value?.setHtml(detail.contentHtml || '')
     form.tags = form.tags || []
     versionDrawer.value = false
-    nextTick(() => updateWordCount())
     ElMessage.success('已载入历史版本，保存后才会生效')
   } catch {
     /* 拦截器已提示 */
@@ -312,10 +310,11 @@ function formatDate(value) {
 
 // ---------- 富文本编辑器 ----------
 const editorRef = shallowRef(null)
+const wordCount = ref(0)
 const toolbarConfig = { excludeKeys: ['group-video'] }
 const editorConfig = {
   placeholder: '开始写作…（可先用右侧 AI 生成初稿）',
-  onChange: (editor) => onEditorContentChanged(editor),
+  onChange: () => onEditorContentChanged(),
   MENU_CONF: {
     uploadImage: {
       async customUpload(file, insertFn) {
@@ -334,13 +333,9 @@ const editorConfig = {
   }
 }
 
-// ---------- 字数统计（不计空白） ----------
-const wordCount = ref(0)
-
-function updateWordCount(editor) {
-  const ed = editor || editorRef.value
-  if (!ed) return
-  wordCount.value = getPlainText(ed).replace(/\s+/g, '').length
+function updateWordCount() {
+  const editor = editorRef.value
+  wordCount.value = editor ? getPlainText(editor).replace(/\s/g, '').length : 0
 }
 
 function handleCreated(editor) {
@@ -349,7 +344,7 @@ function handleCreated(editor) {
   container?.addEventListener('mouseup', onEditorSelectionChange)
   container?.addEventListener('keyup', onEditorSelectionChange)
   document.addEventListener('mousedown', onDocumentMouseDown)
-  nextTick(() => updateWordCount(editor))
+  nextTick(updateWordCount)
 }
 
 function onDocumentMouseDown(event) {
@@ -360,9 +355,9 @@ function onDocumentMouseDown(event) {
   selectionMenu.visible = false
 }
 
-// ---------- 快捷键：Ctrl / ⌘ + S 存草稿 ----------
+// Ctrl / ⌘ + S 快速存草稿
 function onKeydown(event) {
-  if ((event.ctrlKey || event.metaKey) && event.key?.toLowerCase() === 's') {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
     if (!saving.value) save('draft')
   }
@@ -370,8 +365,8 @@ function onKeydown(event) {
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocumentMouseDown)
+  window.removeEventListener('keydown', onKeydownSave)
   window.removeEventListener('beforeunload', onBeforeUnload)
-  window.removeEventListener('keydown', onKeydown)
   if (idleTimer) clearTimeout(idleTimer)
   if (autosaveTimer) clearTimeout(autosaveTimer)
   // 离开前落盘一次，避免最后 1.5 秒内的修改丢失
@@ -407,6 +402,7 @@ const ai = reactive({
 const generating = ref(false)
 const outputMd = ref('')
 const lastResult = ref('')
+const resultBodyRef = ref(null)
 let abortController = null
 
 // ---------- 划词问 AI ----------
@@ -573,9 +569,9 @@ const autoReview = ref(true)
 let idleTimer = null
 let lastReviewedText = ''
 
-function onEditorContentChanged(editor) {
-  updateWordCount(editor)
+function onEditorContentChanged() {
   selectionMenu.visible = false
+  updateWordCount()
   if (!autoReview.value) return
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = window.setTimeout(() => {
@@ -779,7 +775,7 @@ function stopGenerate() {
 
 async function scrollResult() {
   await nextTick()
-  const el = document.querySelector('.result-body')
+  const el = resultBodyRef.value
   if (el) el.scrollTop = el.scrollHeight
 }
 
@@ -914,6 +910,8 @@ function onBeforeUnload(event) {
   event.returnValue = ''
 }
 
+const onKeydownSave = onKeydown
+
 watch(() => [form.title, form.categoryId, form.summary, form.contentHtml,
   form.tags, form.scheduledAt], scheduleAutosave, { deep: true })
 
@@ -951,7 +949,6 @@ async function save(status) {
 }
 
 function confirmSchedule() {
-  if (!form.scheduledAt) return
   scheduleOpen.value = false
   save('scheduled')
 }
@@ -973,8 +970,8 @@ function afterPublish(status, data) {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydownSave)
   window.addEventListener('beforeunload', onBeforeUnload)
-  window.addEventListener('keydown', onKeydown)
   try {
     categories.value = await categoryApi.list()
   } catch {
@@ -1027,47 +1024,46 @@ onMounted(async () => {
   padding: 10px 0;
   margin-bottom: 16px;
   background: var(--paper);
-  border-bottom: 1px solid var(--hairline-dark);
+  border-bottom: 1px solid var(--ink);
 }
-.topbar-left {
+.topbar-left,
+.topbar-right {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
 .topbar-title {
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 900;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
 }
 .doc-badge {
   padding: 1px 8px;
   border: 1px solid var(--hairline-dark);
   font-size: 12px;
   letter-spacing: 0.08em;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   white-space: nowrap;
-}
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 .word-count {
   font-size: 12.5px;
-  letter-spacing: 0.08em;
   color: var(--ink-faint);
-  margin-right: 4px;
+  letter-spacing: 0.06em;
   white-space: nowrap;
 }
+.autosave-hint {
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .schedule-pop .schedule-title {
-  font-size: 13px;
+  margin-bottom: 8px;
   font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--ink-soft);
-  margin-bottom: 10px;
+  letter-spacing: 0.08em;
 }
 .schedule-confirm {
   width: 100%;
@@ -1113,7 +1109,7 @@ onMounted(async () => {
   margin-bottom: 14px;
 }
 
-/* ---------- 富文本编辑器：高度随视口自适应 ---------- */
+/* ---------- 富文本编辑器：高度跟随视口 ---------- */
 .editor-toolbar {
   border: 1px solid var(--hairline-dark);
   border-bottom: none;
@@ -1128,7 +1124,7 @@ onMounted(async () => {
 .editor-content {
   border: 1px solid var(--hairline-dark);
   height: calc(100vh - 330px);
-  min-height: 460px;
+  min-height: 440px;
   overflow-y: hidden;
 }
 .editor-content :deep(.w-e-text-container) {
@@ -1147,22 +1143,26 @@ onMounted(async () => {
   color: var(--ink-faint);
   font-style: normal;
 }
-
-.autosave-hint {
-  font-size: 12.5px;
-  letter-spacing: 0.06em;
+.editor-foot {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.hint {
   color: var(--ink-faint);
-  white-space: nowrap;
+  font-size: 12.5px;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
 }
 
 /* ---------- AI 辅助栏：sticky 跟随 ---------- */
 .ai-col {
   align-self: flex-start;
   position: sticky;
-  top: 64px;
+  top: 62px;
 }
 .ai-card {
-  max-height: calc(100vh - 88px);
+  max-height: calc(100vh - 84px);
   overflow-y: auto;
 }
 .ai-header {
@@ -1240,12 +1240,6 @@ onMounted(async () => {
   line-height: 1.7;
   color: var(--ink);
 }
-.hint {
-  color: var(--ink-faint);
-  font-size: 12.5px;
-  line-height: 1.6;
-  letter-spacing: 0.03em;
-}
 .review-actions {
   display: flex;
   align-items: center;
@@ -1275,6 +1269,9 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px) {
+  .write-topbar {
+    flex-wrap: wrap;
+  }
   .write-page :deep(.el-col) {
     width: 100%;
     max-width: 100%;
@@ -1290,9 +1287,6 @@ onMounted(async () => {
   .editor-content {
     height: auto;
     min-height: 380px;
-  }
-  .write-topbar {
-    flex-wrap: wrap;
   }
 }
 </style>
