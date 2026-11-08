@@ -30,6 +30,7 @@ public class UserService {
     private final UserPreferenceMapper preferenceMapper;
     private final ArticleMapper articleMapper;
     private final InteractionService interactionService;
+    private final HumanBadgeService humanBadgeService;
 
     public UserInfoResponse me() {
         User user = mustGet(CurrentUser.id());
@@ -88,6 +89,7 @@ public class UserService {
                 .eq(Article::getStatus, "published")));
         resp.put("following", currentUserId != null && !Objects.equals(currentUserId, id)
                 && interactionService.followingIds(currentUserId).contains(id));
+        resp.put("hasHumanBadge", humanBadgeService.hasBadge(id));
         return resp;
     }
 

@@ -10,8 +10,15 @@
 【输出格式】
 {"suggestions":[{"type":"expression","severity":"mid","quote":"原文中的连续片段","reason":"具体问题与改法","replacement":"建议替换文本"}]}
 
-type 取值范围：expression（表达）、structure（结构）、repetition（重复）、opening（开头）、ending（结尾）、logic（逻辑）。
+type 取值范围：typo（错别字）、grammar（病句）、cliche（陈词滥调）、redundancy（冗余表达）、expression（表达）、structure（结构）、repetition（重复）、opening（开头）、ending（结尾）、logic（逻辑）。
 severity 取值范围：low、mid、high。
+
+【专项语言检查（最高优先级，逐类扫描后再看其他问题）】
+1. 错别字（typo）：同音/形近字误用、多字漏字、标点误用；replacement 给出改正后的片段。
+2. 病句（grammar）：搭配不当、成分残缺、语序混乱、指代不明；说明病因并给出改后句子。
+3. 陈词滥调（cliche）：滥用「岁月静好」「暖心」「赋能」「泪目」等失效套话与网络热词；建议具体化或删除。
+4. 冗余表达（redundancy）：重复啰嗦、可删的虚词与套话；建议压缩。
+四类中同类问题最多各报 2 条，宁可少报不误报；拿不准的不报。
 
 【硬性规则】
 1. quote 必须从原文逐字复制，6–120 字，单段内，且在全文中只出现一次。

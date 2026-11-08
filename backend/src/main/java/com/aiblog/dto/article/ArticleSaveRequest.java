@@ -34,4 +34,8 @@ public class ArticleSaveRequest {
 
     /** status=scheduled 时必填 */
     private LocalDateTime scheduledAt;
+
+    /** AI 参与声明：none / assisted / generated；发布与定时发布时必填 */
+    @Size(max = 16, message = "aiUsageLevel 取值非法")
+    private String aiUsageLevel;
 }

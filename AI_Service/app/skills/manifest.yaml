@@ -41,6 +41,16 @@ tasks:
         user: "_shared/prose.user.md"
         temperature: 0.7
         max_tokens: 8192
+      liangshiqiu:
+        skill: prose-liangshiqiu-writer
+        user: "_shared/prose.user.md"
+        temperature: 0.7
+        max_tokens: 8192
+      wangzengqi:
+        skill: prose-wangzengqi-writer
+        user: "_shared/prose.user.md"
+        temperature: 0.7
+        max_tokens: 8192
       plain:
         skill: prose-plain-writer
         user: "_shared/prose.user.md"
@@ -58,3 +68,15 @@ tasks:
     skill: care-guardian
     temperature: 0.0
     max_tokens: 32
+  style_profile:
+    skill: style-profiler
+    temperature: 0.3
+    max_tokens: 2000
+  self_insight:
+    skill: self-insight
+    temperature: 0.3
+    max_tokens: 2000
+  tech_wording:
+    skill: tech-wording
+    temperature: 0.2
+    max_tokens: 1600

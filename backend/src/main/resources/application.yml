@@ -14,8 +14,9 @@ spring:
       minimum-idle: 2
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      # PDF 语料上传上限 30MB；图片仍由 FileService 的 5MB 配置单独校验
+      max-file-size: 30MB
+      max-request-size: 32MB
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
@@ -65,6 +66,10 @@ ai:
   search-read-timeout-ms: 10000
   # 全文审阅读超时（非流式结构化建议，独立于生成的 120s）
   review-read-timeout-ms: ${AI_REVIEW_READ_TIMEOUT_MS:60000}
+  # 技术语料向量索引：chromadb 未安装时保持 false，检索退化为 MySQL ngram 全文
+  tech-vector-enabled: ${AI_TECH_VECTOR_ENABLED:false}
+  tech-parse-timeout-ms: ${AI_TECH_PARSE_TIMEOUT_MS:30000}
+  tech-assist-timeout-ms: ${AI_TECH_ASSIST_TIMEOUT_MS:30000}
   # P1 语义搜索结果条数上限
   search-max-top-k: 20
   # 演示开关：填入 JSON 数组时跳过 Python 直接返回 mock hits，默认空=关闭

@@ -6,6 +6,8 @@ import com.aiblog.dto.article.ArticlePageResponse;
 import com.aiblog.dto.article.ArticleSaveRequest;
 import com.aiblog.entity.ArticleVersion;
 import com.aiblog.security.CurrentUser;
+import com.aiblog.service.AiDisclosureService;
+import com.aiblog.service.AiTraceService;
 import com.aiblog.service.ArticleService;
 import com.aiblog.service.ArticleVersionService;
 import com.aiblog.service.InteractionService;
@@ -13,8 +15,12 @@ import com.aiblog.service.StatsService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -35,6 +41,8 @@ public class ArticleController {
     private final InteractionService interactionService;
     private final ArticleVersionService articleVersionService;
     private final StatsService statsService;
+    private final AiDisclosureService aiDisclosureService;
+    private final AiTraceService aiTraceService;
 
     /** 公开列表：仅已发布，支持分类、标签与关键词筛选 */
     @GetMapping
@@ -114,6 +122,12 @@ public class ArticleController {
         return ApiResponse.ok(articleService.recordView(id, viewerKey));
     }
 
+    /** 完读上报：前端到达正文底部时调用，用于策展候选排序 */
+    @PostMapping("/{id}/read-complete")
+    public ApiResponse<Map<String, Object>> readComplete(@PathVariable Long id) {
+        return ApiResponse.ok(articleService.recordComplete(id));
+    }
+
     /** 版本列表（不含正文），仅作者或管理员 */
     @GetMapping("/{id}/versions")
     public ApiResponse<List<ArticleVersion>> versions(@PathVariable Long id) {
@@ -126,4 +140,37 @@ public class ArticleController {
                                                @PathVariable Long versionId) {
         return ApiResponse.ok(articleVersionService.mustGetVersion(id, versionId));
     }
+
+    /** 创作溯源：AI 参与时间线与辅助度评分（公开摘要，不含提示词原文） */
+    @GetMapping("/{id}/trace")
+    public ApiResponse<Map<String, Object>> trace(@PathVariable Long id) {
+        return ApiResponse.ok(aiTraceService.trace(id));
+    }
+
+    /** AI 参与声明建议：按该文章的 AI 调用审计记录推断默认等级，仅作者/管理员 */
+    @GetMapping("/{id}/ai-disclosure/suggest")
+    public ApiResponse<Map<String, Object>> suggestDisclosure(@PathVariable Long id) {
+        return ApiResponse.ok(articleService.suggestDisclosure(id));
+    }
+
+    /** 修改 AI 参与声明（none / assisted / generated），变更写入标识日志 */
+    @PatchMapping("/{id}/ai-disclosure")
+    public ApiResponse<Map<String, Object>> updateDisclosure(@PathVariable Long id,
+                                                             @RequestBody DisclosureRequest request) {
+        return ApiResponse.ok(aiDisclosureService.updateByAuthor(id, request.aiUsageLevel()));
+    }
+
+    /** 导出 Markdown：显式标识置于首尾，隐式标识写入文件元数据 */
+    @GetMapping(value = "/{id}/export", produces = "text/markdown;charset=UTF-8")
+    public ResponseEntity<String> export(@PathVariable Long id) {
+        String markdown = articleService.exportMarkdown(id);
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "markdown",
+                        java.nio.charset.StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"article-" + id + ".md\"")
+                .body(markdown);
+    }
+
+    public record DisclosureRequest(String aiUsageLevel) {}
 }

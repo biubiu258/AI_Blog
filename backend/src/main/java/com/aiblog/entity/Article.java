@@ -37,6 +37,18 @@ public class Article {
     /** 阅读量 */
     private Integer viewCount;
 
+    /** AI 参与程度：none / assisted / generated */
+    private String aiUsageLevel;
+
+    /** 作者主动声明时间 */
+    private LocalDateTime aiDeclaredAt;
+
+    /** 关联的 ai_output trace_id 列表（JSON 数组） */
+    private String aiTraceIds;
+
+    /** 人类创作徽章（迭代 2 启用） */
+    private Integer humanBadge;
+
     @TableLogic
     private Integer deleted;
 

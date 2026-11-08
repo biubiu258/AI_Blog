@@ -48,6 +48,8 @@ class GenerateContext(BaseModel):
 class UserContext(BaseModel):
     preferences: dict[str, Any] | None = None
     history_style: list[Any] = Field(default_factory=list)
+    # 个人文风档案（Java 侧解析后传入）：{id, name, summary, features}
+    style_profile: dict[str, Any] | None = None
 
 
 def _has_text(value: str | None) -> bool:

@@ -11,7 +11,12 @@
           {{ (profile.nickname || 'U').slice(0, 1) }}
         </el-avatar>
         <div class="profile-main">
-          <div class="profile-name">{{ profile.nickname || '未知作者' }}</div>
+          <div class="profile-name">
+            {{ profile.nickname || '未知作者' }}
+            <el-tag v-if="profile.hasHumanBadge" type="success" size="small" effect="light">
+              人类创作
+            </el-tag>
+          </div>
           <div class="profile-bio">{{ profile.bio || '这个人很安静，还没有写简介。' }}</div>
           <div class="profile-stats">
             <span>{{ profile.articleCount || 0 }} 篇文章</span>

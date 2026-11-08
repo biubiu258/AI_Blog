@@ -36,6 +36,8 @@ public class AiGenerateRequest {
         private String recentState;
         /** 划词建议（suggest）：advice / polish / rewrite / expand / condense */
         private String suggestionMode;
+        /** 个人文风档案 id；不传时使用用户默认文风档 */
+        private Long styleProfileId;
     }
 
     @Data
@@ -68,6 +70,7 @@ public class AiGenerateRequest {
         if (params.getEmotion() != null) m.put("emotion", params.getEmotion());
         if (params.getRecentState() != null) m.put("recent_state", params.getRecentState());
         if (params.getSuggestionMode() != null) m.put("suggestion_mode", params.getSuggestionMode());
+        if (params.getStyleProfileId() != null) m.put("style_profile_id", params.getStyleProfileId());
         return m;
     }
 

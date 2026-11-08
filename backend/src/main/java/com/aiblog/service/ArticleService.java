@@ -7,10 +7,12 @@ import com.aiblog.dto.article.ArticleItem;
 import com.aiblog.dto.article.ArticlePageResponse;
 import com.aiblog.dto.article.ArticleSaveRequest;
 import com.aiblog.entity.Article;
+import com.aiblog.entity.ArticleReadStat;
 import com.aiblog.entity.ArticleView;
 import com.aiblog.entity.Category;
 import com.aiblog.entity.User;
 import com.aiblog.mapper.ArticleMapper;
+import com.aiblog.mapper.ArticleReadStatMapper;
 import com.aiblog.mapper.ArticleViewMapper;
 import com.aiblog.mapper.UserMapper;
 import com.aiblog.security.CurrentUser;
@@ -50,6 +52,10 @@ public class ArticleService {
     private final TagService tagService;
     private final ArticleVersionService articleVersionService;
     private final InteractionService interactionService;
+    private final AiDisclosureService aiDisclosureService;
+    private final WritingStreakService writingStreakService;
+    private final SeriesService seriesService;
+    private final ArticleReadStatMapper articleReadStatMapper;
 
     /**
      * 公开文章列表：仅已发布，支持分类、标签与关键词（命中标题或正文）。
@@ -154,7 +160,39 @@ public class ArticleService {
         resp.setLiked((Boolean) state.get("liked"));
         resp.setFavorited((Boolean) state.get("favorited"));
         resp.setFollowing((Boolean) state.get("following"));
+        resp.setSeries(seriesService.articleContext(article.getId()));
         return resp;
+    }
+
+    /**
+     * 按审计记录给出 AI 参与声明建议，仅作者与管理员可查。
+     */
+    public Map<String, Object> suggestDisclosure(Long id) {
+        Article article = mustGet(id);
+        requireEditable(article);
+        return aiDisclosureService.suggest(id);
+    }
+
+    /**
+     * 导出 Markdown：含显式标识与隐式元数据。
+     * 已发布文章所有人可导出；草稿 / 定时 / 私密仅作者与管理员。
+     */
+    public String exportMarkdown(Long id) {
+        Article article = mustGet(id);
+        LoginUser current = currentUserOrNull();
+        boolean isAuthor = current != null && Objects.equals(current.getId(), article.getAuthorId());
+        boolean isAdmin = current != null && current.isAdmin();
+        boolean readable = "published".equals(article.getStatus()) || isAuthor || isAdmin;
+        if (!readable) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权导出该文章");
+        }
+        Category category = article.getCategoryId() == null
+                ? null : categoryService.mustGetOrNull(article.getCategoryId());
+        User author = userMapper.selectById(article.getAuthorId());
+        return aiDisclosureService.buildExportMarkdown(article,
+                author == null ? null : author.getNickname(),
+                category == null ? null : category.getName(),
+                tagService.tagsOfArticle(article.getId()));
     }
 
     /**
@@ -186,11 +224,47 @@ public class ArticleService {
         return resp;
     }
 
+    /**
+     * 完读上报：前端到达正文底部时调用，用于策展候选的完读率排序。
+     */
+    public Map<String, Object> recordComplete(Long id) {
+        Article article = articleMapper.selectById(id);
+        if (article == null || !"published".equals(article.getStatus())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文章不存在");
+        }
+        ArticleReadStat stat = articleReadStatMapper.selectById(id);
+        int completeCount;
+        if (stat == null) {
+            stat = new ArticleReadStat();
+            stat.setArticleId(id);
+            stat.setCompleteCount(1);
+            articleReadStatMapper.insert(stat);
+            completeCount = 1;
+        } else {
+            completeCount = (stat.getCompleteCount() == null ? 0 : stat.getCompleteCount()) + 1;
+            stat.setCompleteCount(completeCount);
+            articleReadStatMapper.updateById(stat);
+        }
+        int views = article.getViewCount() == null ? 0 : article.getViewCount();
+        double rate = views <= 0 ? 0.0
+                : Math.round(Math.min(100.0, 100.0 * completeCount / views) * 10) / 10.0;
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("completeCount", completeCount);
+        resp.put("completionRate", rate);
+        return resp;
+    }
+
     public Map<String, Object> create(ArticleSaveRequest request) {
         validateStatus(request);
         if (request.getCategoryId() != null) {
             categoryService.mustGet(request.getCategoryId());
         }
+        // 发布与定时发布必须完成 AI 参与声明（《标识办法》生成侧义务）
+        boolean needDeclare = "published".equals(request.getStatus())
+                || "scheduled".equals(request.getStatus());
+        String declaredLevel = needDeclare
+                ? aiDisclosureService.requireDeclared(request.getAiUsageLevel())
+                : aiDisclosureService.normalizeOrNull(request.getAiUsageLevel());
         // 检测只挂在发布动作上（契约 5.8），存草稿/定时不检测
         boolean publishing = "published".equals(request.getStatus());
         CareService.CareResult care = publishing
@@ -198,21 +272,35 @@ public class ArticleService {
                 : CareService.CareResult.none();
         Article article = new Article();
         applyRequest(article, request);
+        article.setAuthorId(CurrentUser.id());
+        if (declaredLevel == null) {
+            article.setAiUsageLevel(AiDisclosureService.LEVEL_NONE);
+        } else {
+            aiDisclosureService.applyDeclaration(article, declaredLevel);
+        }
         // 危机倾向：照常发布但仅作者可见（publishedAt 照设、不进公共语义检索），发布流程零打断
         if (publishing && care.high()) {
             article.setStatus("private");
         }
-        article.setAuthorId(CurrentUser.id());
         if (publishing) {
             article.setPublishedAt(LocalDateTime.now());
         }
         articleMapper.insert(article);
+        if (declaredLevel != null) {
+            aiDisclosureService.logChange(article.getId(), null, declaredLevel,
+                    CurrentUser.id(), publishing || "scheduled".equals(request.getStatus())
+                            ? "发布前声明" : "草稿声明");
+        }
         tagService.setArticleTags(article.getId(), request.getTags());
         log.info("文章创建: id={}, author={}, status={}", article.getId(), article.getAuthorId(), article.getStatus());
         if ("published".equals(article.getStatus())) {
             vectorSyncService.upsert(article);
         }
         careService.record(article.getAuthorId(), article.getId(), care.level());
+        writingStreakService.recordActivity(article.getAuthorId(), publishing ? "publish" : "save");
+        if (publishing) {
+            seriesService.notifySeriesUpdate(article);
+        }
         return buildSaveResponse(article, care);
     }
 
@@ -225,13 +313,22 @@ public class ArticleService {
         }
         // 更新前留档，保证可回溯到上一版
         articleVersionService.snapshot(article, CurrentUser.id());
+        String oldLevel = article.getAiUsageLevel();
         boolean wasPublished = "published".equals(article.getStatus());
         boolean publishing = "published".equals(request.getStatus());
+        // 发布与定时发布必须完成 AI 参与声明（《标识办法》生成侧义务）
+        boolean needDeclare = publishing || "scheduled".equals(request.getStatus());
+        String declaredLevel = needDeclare
+                ? aiDisclosureService.requireDeclared(request.getAiUsageLevel())
+                : aiDisclosureService.normalizeOrNull(request.getAiUsageLevel());
         // 再次发布 = 重新检测：内容修改后 level 降级则自动转回公开
         CareService.CareResult care = publishing
                 ? careService.check(CurrentUser.id(), request.getTitle(), request.getContentHtml())
                 : CareService.CareResult.none();
         applyRequest(article, request);
+        if (declaredLevel != null) {
+            aiDisclosureService.applyDeclaration(article, declaredLevel);
+        }
         if (publishing && care.high()) {
             article.setStatus("private");
         }
@@ -239,6 +336,11 @@ public class ArticleService {
             article.setPublishedAt(LocalDateTime.now());
         }
         articleMapper.updateById(article);
+        if (declaredLevel != null) {
+            aiDisclosureService.logChange(article.getId(), oldLevel, declaredLevel,
+                    CurrentUser.id(), publishing || "scheduled".equals(request.getStatus())
+                            ? "发布前声明" : "草稿更新声明");
+        }
         tagService.setArticleTags(article.getId(), request.getTags());
         log.info("文章更新: id={}, status={}", article.getId(), article.getStatus());
         // 发布态才需要向量；转私密、转草稿或转定时则移除向量
@@ -248,6 +350,10 @@ public class ArticleService {
             vectorSyncService.delete(article.getId());
         }
         careService.record(article.getAuthorId(), article.getId(), care.level());
+        writingStreakService.recordActivity(article.getAuthorId(), publishing ? "publish" : "save");
+        if (publishing && !wasPublished) {
+            seriesService.notifySeriesUpdate(article);
+        }
         return buildSaveResponse(article, care);
     }
 

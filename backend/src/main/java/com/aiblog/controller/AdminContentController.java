@@ -4,22 +4,29 @@ import com.aiblog.common.ApiResponse;
 import com.aiblog.common.BusinessException;
 import com.aiblog.common.ErrorCode;
 import com.aiblog.dto.article.ArticlePageResponse;
+import com.aiblog.entity.ContentLabelLog;
 import com.aiblog.security.CurrentUser;
 import com.aiblog.service.AdminLogService;
+import com.aiblog.service.AiDisclosureService;
 import com.aiblog.service.ArticleService;
+import com.aiblog.service.CampaignService;
 import com.aiblog.service.CommentService;
+import com.aiblog.service.CuratorService;
+import com.aiblog.service.HumanBadgeService;
 import com.aiblog.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +44,10 @@ public class AdminContentController {
     private final CommentService commentService;
     private final AdminLogService adminLogService;
     private final ReportService reportService;
+    private final AiDisclosureService aiDisclosureService;
+    private final HumanBadgeService humanBadgeService;
+    private final CuratorService curatorService;
+    private final CampaignService campaignService;
 
     @GetMapping("/articles")
     public ApiResponse<ArticlePageResponse> articles(
@@ -85,6 +96,60 @@ public class AdminContentController {
 
     public record BatchStatusRequest(List<Long> ids, String status) {}
 
+    /** AI 内容标识台账：按等级（none / assisted / generated）与标题筛选 */
+    @GetMapping("/content-labels")
+    public ApiResponse<Map<String, Object>> contentLabels(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.ok(aiDisclosureService.adminPage(page, size, level, keyword));
+    }
+
+    /** 管理端修正标识等级，必须填写原因并写入操作日志 */
+    @PutMapping("/content-labels/{articleId}")
+    public ApiResponse<Map<String, Object>> updateContentLabel(
+            @PathVariable Long articleId,
+            @RequestBody UpdateLabelRequest request) {
+        if (request.reason() == null || request.reason().isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "修正标识需填写原因");
+        }
+        Map<String, Object> result = aiDisclosureService.adminUpdate(
+                articleId, request.aiUsageLevel(), request.reason());
+        adminLogService.record(CurrentUser.get(), "CONTENT_LABEL_UPDATE", "article:" + articleId,
+                Map.of("level", request.aiUsageLevel(), "reason", request.reason()));
+        return ApiResponse.ok(result);
+    }
+
+    /** 单篇文章的标识变更历史 */
+    @GetMapping("/content-labels/{articleId}/logs")
+    public ApiResponse<List<ContentLabelLog>> labelLogs(@PathVariable Long articleId) {
+        return ApiResponse.ok(aiDisclosureService.logs(articleId));
+    }
+
+    public record UpdateLabelRequest(String aiUsageLevel, String reason) {}
+
+    /** 人类创作徽章申请列表：按状态筛选 */
+    @GetMapping("/badges")
+    public ApiResponse<Map<String, Object>> badges(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status) {
+        return ApiResponse.ok(humanBadgeService.adminPage(page, size, status));
+    }
+
+    /** 审核徽章申请：passed / rejected，拒绝理由将向申请人展示 */
+    @PutMapping("/badges/{id}")
+    public ApiResponse<Map<String, Object>> reviewBadge(@PathVariable Long id,
+                                                        @RequestBody BadgeReviewRequest request) {
+        Map<String, Object> result = humanBadgeService.review(id, request.status(), request.note());
+        adminLogService.record(CurrentUser.get(), "BADGE_REVIEW", "badge:" + id,
+                Map.of("status", request.status()));
+        return ApiResponse.ok(result);
+    }
+
+    public record BadgeReviewRequest(String status, String note) {}
+
     /** 举报列表：status 可传 pending / handled / dismissed */
     @GetMapping("/reports")
     public ApiResponse<Map<String, Object>> reports(
@@ -113,6 +178,72 @@ public class AdminContentController {
     }
 
     public record HandleReportRequest(String action) {}
+
+    /** 伯乐名单 */
+    @GetMapping("/curators")
+    public ApiResponse<List<Map<String, Object>>> curators() {
+        return ApiResponse.ok(curatorService.adminList());
+    }
+
+    /** 指定伯乐并设置任期 */
+    @PostMapping("/curators")
+    public ApiResponse<Map<String, Object>> addCurator(@RequestBody CuratorRequest request) {
+        Map<String, Object> result = curatorService.addCurator(
+                request.userId(), request.termStart(), request.termEnd());
+        adminLogService.record(CurrentUser.get(), "CURATOR_ADD", "user:" + request.userId(),
+                Map.of("termStart", String.valueOf(request.termStart())));
+        return ApiResponse.ok(result);
+    }
+
+    @DeleteMapping("/curators/{id}")
+    public ApiResponse<Void> removeCurator(@PathVariable Long id) {
+        curatorService.removeCurator(id);
+        adminLogService.record(CurrentUser.get(), "CURATOR_REMOVE", "curator:" + id, Map.of());
+        return ApiResponse.ok();
+    }
+
+    /** 运营导出候选池：含 AI 辅助度与完读率 */
+    @GetMapping("/curation/candidates")
+    public ApiResponse<List<Map<String, Object>>> curationCandidates() {
+        return ApiResponse.ok(curatorService.candidates());
+    }
+
+    public record CuratorRequest(Long userId, LocalDate termStart, LocalDate termEnd) {}
+
+    /** 活动列表（含草稿） */
+    @GetMapping("/campaigns")
+    public ApiResponse<Map<String, Object>> campaigns(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status) {
+        return ApiResponse.ok(campaignService.adminPage(page, size, status));
+    }
+
+    @PostMapping("/campaigns")
+    public ApiResponse<Map<String, Object>> createCampaign(
+            @RequestBody CampaignService.CampaignRequest request) {
+        return ApiResponse.ok(campaignService.create(request));
+    }
+
+    @PutMapping("/campaigns/{id}")
+    public ApiResponse<Map<String, Object>> updateCampaign(
+            @PathVariable Long id, @RequestBody CampaignService.CampaignRequest request) {
+        return ApiResponse.ok(campaignService.update(id, request));
+    }
+
+    @DeleteMapping("/campaigns/{id}")
+    public ApiResponse<Void> deleteCampaign(@PathVariable Long id) {
+        campaignService.delete(id);
+        return ApiResponse.ok();
+    }
+
+    /** 上线活动并通知全站作者 */
+    @PostMapping("/campaigns/{id}/publish")
+    public ApiResponse<Map<String, Object>> publishCampaign(@PathVariable Long id) {
+        Map<String, Object> result = campaignService.publish(id);
+        adminLogService.record(CurrentUser.get(), "CAMPAIGN_PUBLISH", "campaign:" + id, Map.of());
+        return ApiResponse.ok(result);
+    }
 
     private static String join(List<Long> ids) {
         return ids == null ? "" : ids.stream().map(String::valueOf)

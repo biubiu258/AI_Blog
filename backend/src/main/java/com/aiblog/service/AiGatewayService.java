@@ -8,6 +8,7 @@ import com.aiblog.common.BusinessException;
 import com.aiblog.common.ErrorCode;
 import com.aiblog.config.AiProperties;
 import com.aiblog.dto.ai.AiGenerateRequest;
+import com.aiblog.entity.StyleProfile;
 import com.aiblog.entity.UserPreference;
 import com.aiblog.mapper.UserPreferenceMapper;
 import com.aiblog.security.LoginUser;
@@ -15,6 +16,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 import reactor.core.Disposable;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -83,6 +85,7 @@ public class AiGatewayService {
     private final PythonErrorTranslator errorTranslator;
     private final AiAuditService auditService;
     private final ObjectMapper objectMapper;
+    private final StyleProfileService styleProfileService;
 
     public SseEmitter generate(LoginUser user, AiGenerateRequest request) {
         validateForTask(request);
@@ -277,8 +280,40 @@ public class AiGatewayService {
         Map<String, Object> userContext = new LinkedHashMap<>();
         userContext.put("preferences", loadPreferences(user.getId()));
         userContext.put("history_style", List.of());
+        userContext.put("style_profile", loadStyleProfile(user.getId(), request));
         payload.put("user_context", userContext);
         return payload;
+    }
+
+    /**
+     * 个人文风卡（迭代 2）：请求显式指定 styleProfileId 时校验归属，
+     * 否则用默认档；无可用档案返回 null，不阻塞生成。
+     */
+    private Map<String, Object> loadStyleProfile(Long userId, AiGenerateRequest request) {
+        Long requestedId = request.getParams() == null ? null : request.getParams().getStyleProfileId();
+        StyleProfile profile = styleProfileService.resolveForGeneration(userId, requestedId);
+        if (profile == null) {
+            return null;
+        }
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", profile.getId());
+        map.put("name", profile.getName());
+        map.put("summary", profile.getSummary());
+        map.put("features", parseFeatures(profile.getFeatures()));
+        return map;
+    }
+
+    private Map<String, Object> parseFeatures(String json) {
+        if (!StringUtils.hasText(json)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json,
+                    objectMapper.getTypeFactory().constructMapType(LinkedHashMap.class, String.class, Object.class));
+        } catch (Exception e) {
+            log.warn("文风特征 JSON 解析失败，按空特征注入: {}", e.getMessage());
+            return Map.of();
+        }
     }
 
     /**

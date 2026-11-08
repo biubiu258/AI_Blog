@@ -85,13 +85,116 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 人类创作徽章 -->
+    <el-card shadow="never" class="panel-card badge-card">
+      <template #header>
+        <div class="card-head">
+          <span class="card-title">人类创作徽章</span>
+          <span class="card-sub">HUMAN BADGE</span>
+        </div>
+      </template>
+      <div v-loading="badgeLoading" class="badge-body">
+        <template v-if="hasPassedBadge">
+          <el-tag type="success" effect="dark">✍ 人类创作作者</el-tag>
+          <span class="badge-tip">已通过人工审核，个人主页将展示「人类创作」标识</span>
+        </template>
+        <template v-else>
+          <div v-for="b in badges" :key="b.id" class="badge-record">
+            <el-tag v-if="b.status === 'pending'" type="warning" size="small" effect="plain">
+              审核中
+            </el-tag>
+            <template v-else-if="b.status === 'rejected'">
+              <el-tag type="info" size="small" effect="plain">未通过</el-tag>
+              <span class="badge-note">未通过：{{ b.note || '未填写理由' }}</span>
+            </template>
+            <span class="badge-time">{{ formatDate(b.createdAt) }}</span>
+          </div>
+          <div v-if="!hasPendingBadge" class="badge-apply">
+            <span class="badge-tip">累计发布 3 篇及以上人类创作的文章即可申请，通过后展示在个人主页</span>
+            <el-button type="primary" size="small" :loading="applying" @click="applyBadge">
+              申请徽章
+            </el-button>
+          </div>
+        </template>
+      </div>
+    </el-card>
+
+    <!-- 创作运营入口 -->
+    <el-card shadow="never" class="panel-card tools-card">
+      <template #header>
+        <div class="card-head">
+          <span class="card-title">创作运营</span>
+          <span class="card-sub">SERIES · STREAK · CURATOR</span>
+        </div>
+      </template>
+      <div class="entry-row">
+        <el-button @click="$router.push('/series')">我的连载</el-button>
+        <el-button @click="$router.push('/streak')">
+          日更打卡
+          <span v-if="streakDays > 0" class="entry-streak">连续 {{ streakDays }} 天</span>
+        </el-button>
+        <el-button v-if="isCurator" type="primary" plain @click="$router.push('/curator')">
+          伯乐工作台
+        </el-button>
+      </div>
+    </el-card>
+
+    <!-- AI 洞察回顾（只读） -->
+    <el-card shadow="never" class="panel-card insight-card">
+      <template #header>
+        <div class="card-head">
+          <span class="card-title">AI 洞察回顾</span>
+          <span class="card-sub">READ-ONLY REVIEW</span>
+        </div>
+      </template>
+      <div v-loading="insightLoading" class="insight-body">
+        <div class="insight-head">
+          <span class="insight-tip">只回顾，不构成写作建议</span>
+          <el-button type="primary" size="small" :loading="insightLoading" @click="generateInsight">
+            生成回顾
+          </el-button>
+        </div>
+        <el-alert v-if="insightError" type="info" :closable="false" show-icon
+                  :title="insightError" class="insight-alert" />
+        <template v-else-if="insight">
+          <p class="insight-summary">{{ insight.summary }}</p>
+          <div v-if="(insight.themes || []).length" class="insight-group">
+            <span class="insight-label">主题</span>
+            <el-tag v-for="t in insight.themes" :key="t" size="small" effect="plain" class="insight-tag">
+              {{ t }}
+            </el-tag>
+          </div>
+          <div v-if="(insight.motifs || []).length" class="insight-group">
+            <span class="insight-label">意象</span>
+            <el-tag v-for="m in insight.motifs" :key="m" size="small" type="info" effect="plain"
+                    class="insight-tag">
+              {{ m }}
+            </el-tag>
+          </div>
+          <div v-if="(insight.habits || []).length" class="insight-group">
+            <span class="insight-label">写作习惯</span>
+            <ul class="insight-habits">
+              <li v-for="h in insight.habits" :key="h">{{ h }}</li>
+            </ul>
+          </div>
+          <p v-if="insight.disclaimer" class="insight-disclaimer">{{ insight.disclaimer }}</p>
+          <p class="insight-meta">
+            基于 {{ insight.articleCount || 0 }} 篇文章 · {{ formatDate(insight.generatedAt) }}
+          </p>
+        </template>
+        <p v-else class="insight-hint">
+          点击「生成回顾」，让 AI 仅回顾你已发布的文章，梳理主题、意象与写作习惯。
+        </p>
+      </div>
+    </el-card>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { authApi, fileApi, userApi } from '../api'
+import { authApi, badgeApi, curatorApi, fileApi, insightApi, streakApi, userApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -169,7 +272,81 @@ async function savePreference() {
   }
 }
 
+// ---------- 人类创作徽章 ----------
+const badges = ref([])
+const badgeLoading = ref(false)
+const applying = ref(false)
+const hasPassedBadge = computed(() => badges.value.some((b) => b.status === 'passed'))
+const hasPendingBadge = computed(() => badges.value.some((b) => b.status === 'pending'))
+
+async function loadBadges() {
+  badgeLoading.value = true
+  try {
+    badges.value = (await badgeApi.mine()) || []
+  } catch {
+    badges.value = []
+  } finally {
+    badgeLoading.value = false
+  }
+}
+
+async function applyBadge() {
+  applying.value = true
+  try {
+    await badgeApi.apply()
+    ElMessage.success('申请已提交，等待人工审核')
+    await loadBadges()
+  } catch {
+    // 400（不足 3 篇 / 已有待审申请）等错误提示已由请求层统一展示
+  } finally {
+    applying.value = false
+  }
+}
+
+// ---------- 创作运营入口 ----------
+const streakDays = ref(0)
+const isCurator = ref(false)
+
+async function loadEntryStats() {
+  try {
+    const summary = await streakApi.summary()
+    streakDays.value = summary?.currentStreak || 0
+  } catch {
+    streakDays.value = 0
+  }
+  try {
+    const me = await curatorApi.me()
+    isCurator.value = !!me?.isCurator
+  } catch {
+    isCurator.value = false
+  }
+}
+
+// ---------- AI 洞察回顾（只读） ----------
+const insight = ref(null)
+const insightLoading = ref(false)
+const insightError = ref('')
+
+async function generateInsight() {
+  insightLoading.value = true
+  insightError.value = ''
+  try {
+    insight.value = await insightApi.generate()
+  } catch (err) {
+    insight.value = null
+    insightError.value = err?.message || err?.response?.data?.message || '回顾生成失败，请稍后再试'
+  } finally {
+    insightLoading.value = false
+  }
+}
+
+function formatDate(value) {
+  return value ? String(value).replace('T', ' ').slice(0, 16) : ''
+}
+
 onMounted(async () => {
+  loadBadges()
+  loadEntryStats()
   try {
     const me = await userApi.me()
     Object.assign(form, {
@@ -246,5 +423,133 @@ onMounted(async () => {
   background: var(--paper-deep);
   color: var(--ink-soft);
   font-weight: 700;
+}
+
+/* 人类创作徽章 */
+.badge-card {
+  margin-top: 20px;
+}
+.badge-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 48px;
+}
+.badge-record {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.badge-note {
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+.badge-time {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+.badge-apply {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.badge-tip {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* 创作运营入口 */
+.tools-card,
+.insight-card {
+  margin-top: 20px;
+}
+.entry-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.entry-row .el-button {
+  margin-left: 0;
+}
+.entry-streak {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--cinnabar);
+}
+
+/* AI 洞察回顾 */
+.insight-body {
+  min-height: 92px;
+}
+.insight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.insight-tip {
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  color: var(--cinnabar);
+}
+.insight-alert {
+  margin-top: 6px;
+}
+.insight-summary {
+  margin: 4px 0 14px;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.insight-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.insight-label {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+  flex-shrink: 0;
+}
+.insight-tag {
+  margin: 0;
+}
+.insight-habits {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink-soft);
+}
+.insight-disclaimer {
+  margin: 12px 0 4px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-faint);
+  background: rgba(0, 0, 0, 0.02);
+  border-left: 2px solid var(--hairline-dark);
+}
+.insight-meta {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+.insight-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--ink-faint);
 }
 </style>

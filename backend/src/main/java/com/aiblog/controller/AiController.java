@@ -9,14 +9,19 @@ import com.aiblog.service.AiAuditService;
 import com.aiblog.service.AiGatewayService;
 import com.aiblog.service.AiReviewService;
 import com.aiblog.service.AiUsageService;
+import com.aiblog.service.SelfInsightService;
+import com.aiblog.service.WritingCompanionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.Map;
 
 /**
  * AI 网关入口：仅鉴权转发，不落库、不碰文章表（契约 5.1 生成与发布的边界）。
@@ -30,6 +35,14 @@ public class AiController {
     private final AiReviewService aiReviewService;
     private final AiUsageService aiUsageService;
     private final AiAuditService aiAuditService;
+    private final WritingCompanionService writingCompanionService;
+    private final SelfInsightService selfInsightService;
+
+    /** 写作陪伴提示：结合关怀检测、写作节奏与文风库的温和观察（只观察不建议） */
+    @GetMapping("/companion")
+    public ApiResponse<Map<String, Object>> companion() {
+        return ApiResponse.ok(writingCompanionService.companion());
+    }
 
     /**
      * AI 生成（SSE 流式）。流建立前失败返回统一 JSON（2001/2002 等），
@@ -50,6 +63,12 @@ public class AiController {
         aiUsageService.checkQuota(CurrentUser.id());
         aiUsageService.record(CurrentUser.id(), "review");
         return ApiResponse.ok(aiReviewService.review(CurrentUser.get(), request));
+    }
+
+    /** 自我洞察式回顾：最近 10 篇已发布文章的主题脉络、反复意象与写作习惯（只回顾不建议） */
+    @PostMapping("/insight")
+    public ApiResponse<Map<String, Object>> insight() {
+        return ApiResponse.ok(selfInsightService.insight());
     }
 
     /** 建议被采纳（一键替换后调用），用于统计采纳率 */

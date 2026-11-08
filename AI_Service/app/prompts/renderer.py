@@ -38,6 +38,11 @@ def render(template_name: str, variables: dict) -> str:
 def build_messages(spec: PromptSpec, variables: dict) -> list[dict]:
     system = render(spec.system_template, variables)
     user = render(spec.user_template, variables)
+    # 个人文风卡（若有）统一追加到 system 末尾：对全部生成任务生效，
+    # 且无需每个 skill 模板都引用 user_style_card 变量
+    style_card = variables.get("user_style_card")
+    if style_card:
+        system = f"{system}\n\n{style_card}"
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": user},

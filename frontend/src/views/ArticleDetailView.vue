@@ -40,8 +40,58 @@
 
         <div class="head-rule"><span class="rule-mark">◆</span></div>
 
+        <!-- AI 内容标识（《标识办法》第四条：交互界面显著位置提示） -->
+        <div v-if="aiLevel !== 'none' || article.humanBadge" class="ai-disclosure-bar">
+          <el-tag v-if="aiLevel !== 'none'"
+                  :type="aiLevel === 'generated' ? 'danger' : 'warning'" size="small" effect="dark">
+            {{ aiLevel === 'generated' ? 'AI 生成' : 'AI 辅助' }}
+          </el-tag>
+          <el-tag v-if="article.humanBadge" type="success" size="small" effect="dark">✍ 人类创作声明</el-tag>
+          <span v-if="aiLevel !== 'none'" class="ai-disclosure-text">{{ aiLabelText }}</span>
+          <router-link :to="`/article/${articleId}/source`" class="ai-trace-link">创作溯源</router-link>
+          <span v-if="aiLevel !== 'none'" class="ai-disclosure-id">{{ article.aiContentId }}</span>
+        </div>
+
+        <!-- 连载上下文：所属连载、篇次与上下篇 -->
+        <div v-if="article.series" class="series-context">
+          <div class="series-context-main">
+            <span class="series-label">本文属于连载</span>
+            <router-link :to="`/series/${article.series.id}`" class="series-name">
+              《{{ article.series.title }}》
+            </router-link>
+            <span class="series-index">第 {{ article.series.index }} / {{ article.series.total }} 篇</span>
+          </div>
+          <div class="series-nav">
+            <el-button v-if="article.series.prev" link size="small"
+                       @click="$router.push(`/article/${article.series.prev.id}`)">
+              ← 上一篇：{{ article.series.prev.title }}
+            </el-button>
+            <span v-else class="series-edge">已是第一篇</span>
+            <el-button v-if="article.series.next" link size="small"
+                       @click="$router.push(`/article/${article.series.next.id}`)">
+              下一篇：{{ article.series.next.title }} →
+            </el-button>
+            <span v-else class="series-edge">已是最后一篇</span>
+          </div>
+        </div>
+
         <!-- 正文为后端白名单清洗后的 HTML，可安全渲染 -->
         <div class="article-content" v-html="article.contentHtml"></div>
+
+        <!-- 完读哨兵：到达正文底部后只上报一次 -->
+        <div ref="readSentinel" class="read-sentinel" aria-hidden="true"></div>
+
+        <div v-if="article.series" class="series-foot-nav">
+          <el-button v-if="article.series.prev" size="small"
+                     @click="$router.push(`/article/${article.series.prev.id}`)">
+            ← 上一篇
+          </el-button>
+          <el-button @click="$router.push(`/series/${article.series.id}`)">查看连载目录</el-button>
+          <el-button v-if="article.series.next" size="small"
+                     @click="$router.push(`/article/${article.series.next.id}`)">
+            下一篇 →
+          </el-button>
+        </div>
 
         <footer class="article-actions">
           <el-button :type="article.liked ? 'primary' : 'default'" @click="toggleLike">
@@ -50,6 +100,7 @@
           <el-button :type="article.favorited ? 'warning' : 'default'" @click="toggleFavorite">
             <span class="action-mark">藏</span> {{ article.favoriteCount || 0 }}
           </el-button>
+          <el-button link @click="downloadMarkdown">导出</el-button>
           <el-button link type="danger" @click="reportArticle">举报</el-button>
         </footer>
       </article>
@@ -124,7 +175,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { articleApi, commentApi, reportApi, userApi } from '../api'
@@ -136,6 +187,53 @@ const articleId = computed(() => route.params.id)
 
 const loading = ref(false)
 const article = ref({})
+
+// 完读上报：一次页面浏览只报一次，未登录或失败静默忽略
+const readSentinel = ref(null)
+const readReported = ref(false)
+let readObserver = null
+
+function reportReadComplete() {
+  if (readReported.value) return
+  if (article.value.status !== 'published') return
+  readReported.value = true
+  articleApi.readComplete(articleId.value).catch(() => {})
+}
+
+function setupReadTracker() {
+  if (readObserver) {
+    readObserver.disconnect()
+    readObserver = null
+  }
+  if (!auth.isLoggedIn || !readSentinel.value || typeof IntersectionObserver === 'undefined') return
+  readObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) reportReadComplete()
+  }, { threshold: 0.1 })
+  readObserver.observe(readSentinel.value)
+}
+
+const aiLevel = computed(() => article.value.aiUsageLevel || 'none')
+const aiLabelText = computed(() => {
+  if (aiLevel.value === 'generated') return '内容主要由 AI 生成，已由作者审核后发布'
+  if (aiLevel.value === 'assisted') return '含 AI 辅助创作内容，已由作者人工修改与确认'
+  return ''
+})
+
+/** 导出含 AI 标识的 Markdown */
+async function downloadMarkdown() {
+  try {
+    const text = await articleApi.exportMarkdown(articleId.value)
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${article.value.title || 'article'}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    // 失败提示已由请求层统一处理
+  }
+}
 const comments = ref([])
 const commentContent = ref('')
 const submitting = ref(false)
@@ -148,6 +246,11 @@ const canDelete = (c) =>
   auth.isLoggedIn && (auth.user?.id === c.authorId || auth.isAdmin)
 
 async function load() {
+  readReported.value = false
+  if (readObserver) {
+    readObserver.disconnect()
+    readObserver = null
+  }
   loading.value = true
   try {
     article.value = await articleApi.detail(articleId.value)
@@ -155,6 +258,8 @@ async function load() {
   } finally {
     loading.value = false
   }
+  await nextTick()
+  setupReadTracker()
   if (article.value.status === 'published') {
     articleApi
       .view(articleId.value)
@@ -248,7 +353,13 @@ function formatDate(value) {
   return value ? String(value).replace('T', ' ').slice(0, 16) : ''
 }
 
+watch(() => route.params.id, (id) => {
+  if (id) load()
+})
 onMounted(load)
+onBeforeUnmount(() => {
+  if (readObserver) readObserver.disconnect()
+})
 </script>
 
 <style scoped>
@@ -335,6 +446,106 @@ onMounted(load)
 .rule-mark {
   color: var(--cinnabar);
   font-size: 9px;
+}
+
+/* AI 内容标识条：显著位置、低干扰配色 */
+.ai-disclosure-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 30px;
+  border: 1px solid var(--hairline-dark);
+  border-left: 3px solid var(--cinnabar);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.015);
+}
+.ai-disclosure-text {
+  font-size: 13px;
+  color: var(--ink-soft, #55534c);
+}
+.ai-trace-link {
+  font-size: 13px;
+  color: var(--cinnabar);
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+.ai-trace-link:hover {
+  opacity: 0.75;
+  text-decoration: underline;
+}
+.ai-disclosure-id {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint, #9a9588);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 连载上下文 */
+.series-context {
+  margin-bottom: 26px;
+  padding: 12px 16px;
+  border: 1px solid var(--hairline-dark);
+  border-left: 3px solid var(--ink);
+  background: rgba(0, 0, 0, 0.015);
+}
+.series-context-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 14px;
+}
+.series-label {
+  padding: 1px 6px;
+  border: 1px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+}
+.series-name {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+.series-name:hover {
+  color: var(--cinnabar);
+}
+.series-index {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+.series-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--hairline);
+  font-size: 13px;
+}
+.series-edge {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+.read-sentinel {
+  height: 1px;
+  width: 100%;
+}
+.series-foot-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 34px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
 }
 
 .article-actions {

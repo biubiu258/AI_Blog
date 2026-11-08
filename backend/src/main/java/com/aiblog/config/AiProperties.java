@@ -45,6 +45,18 @@ public class AiProperties {
     /** 全文审阅读超时：非流式返回结构化建议，独立于生成的 120s */
     private int reviewReadTimeoutMs = 60000;
 
+    /** 文风提炼读超时：样本最多 10 篇，提炼比审阅更慢 */
+    private int styleProfileReadTimeoutMs = 90000;
+
+    /** 技术语料向量索引开关：chromadb 未安装时保持 false，检索退化为 MySQL 全文 */
+    private boolean techVectorEnabled = false;
+
+    /** 技术语料解析超时 */
+    private int techParseTimeoutMs = 30000;
+
+    /** 技术措辞建议超时 */
+    private int techAssistTimeoutMs = 30000;
+
     /** P1 语义搜索结果条数上限 */
     private int searchMaxTopK = 20;
 
