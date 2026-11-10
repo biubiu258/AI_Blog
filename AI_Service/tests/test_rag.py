@@ -1,5 +1,6 @@
 """RAG：切块、Chroma 读写、服务开关与接口映射。"""
 from pathlib import Path
+import importlib.util
 
 import pytest
 
@@ -16,6 +17,10 @@ from app.rag.service import RagError, RagService
 from app.rag.store import VectorStore
 
 TOKEN_HEADER = {"X-Internal-Token": "test-token"}
+CHROMADB_AVAILABLE = importlib.util.find_spec("chromadb") is not None
+requires_chromadb = pytest.mark.skipif(
+    not CHROMADB_AVAILABLE, reason="未安装可选依赖 chromadb"
+)
 
 
 def _settings(tmp_path: Path, enabled: bool = True) -> Settings:
@@ -116,6 +121,7 @@ def test_snippet_is_readable():
     assert snippet.endswith("……")
 
 
+@requires_chromadb
 def test_store_upsert_search_delete(tmp_path):
     store = VectorStore(str(tmp_path / "chroma"))
     store.upsert(
@@ -156,6 +162,7 @@ async def test_service_disabled_returns_empty(tmp_path):
     assert service.status() == {"enabled": False, "ready": False, "documents": 0}
 
 
+@requires_chromadb
 async def test_service_upsert_prefixes_title_and_chunks(tmp_path):
     embedder = FakeEmbedder()
     store = VectorStore(str(tmp_path / "chroma"))

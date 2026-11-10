@@ -18,6 +18,10 @@
                        :class="{ active: activeMenu === '/ranking' }">
             排行
           </router-link>
+          <router-link to="/tech" class="nav-item"
+                       :class="{ active: activeMenu === '/tech' }">
+            技术
+          </router-link>
           <router-link v-if="auth.isLoggedIn" to="/write" class="nav-item"
                        :class="{ active: activeMenu === '/write' }">
             写作
@@ -29,6 +33,19 @@
           <router-link v-if="auth.isLoggedIn" to="/my" class="nav-item"
                        :class="{ active: activeMenu === '/my' }">
             我的文章
+          </router-link>
+          <router-link v-if="auth.isLoggedIn" to="/series" class="nav-item"
+                       :class="{ active: activeMenu === '/series' }">
+            连载
+          </router-link>
+          <router-link v-if="auth.isLoggedIn" to="/streak" class="nav-item"
+                       :class="{ active: activeMenu === '/streak' }">
+            日更
+            <span v-if="streakDays > 0" class="nav-streak">{{ streakDays }}</span>
+          </router-link>
+          <router-link v-if="isCurator" to="/curator" class="nav-item"
+                       :class="{ active: activeMenu === '/curator' }">
+            伯乐
           </router-link>
           <router-link v-if="auth.isAdminLike" to="/admin" class="nav-item"
                        :class="{ active: activeMenu === '/admin' }">
@@ -56,6 +73,9 @@
                   <el-dropdown-item command="profile">个人中心</el-dropdown-item>
                   <el-dropdown-item command="dashboard">创作数据</el-dropdown-item>
                   <el-dropdown-item command="my">我的文章</el-dropdown-item>
+                  <el-dropdown-item command="series">我的连载</el-dropdown-item>
+                  <el-dropdown-item command="streak">日更打卡</el-dropdown-item>
+                  <el-dropdown-item v-if="isCurator" command="curator">伯乐工作台</el-dropdown-item>
                   <el-dropdown-item v-if="auth.isAdminLike" command="admin">管理后台</el-dropdown-item>
                   <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
                 </el-dropdown-menu>
@@ -92,7 +112,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { notificationApi } from '../api'
+import { curatorApi, notificationApi, streakApi } from '../api'
 import CareNote from '../care/CareNote.vue'
 import CareDialog from '../care/CareDialog.vue'
 
@@ -101,7 +121,29 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const unread = ref(0)
+const streakDays = ref(0)
+const isCurator = ref(false)
 let timer = null
+
+async function refreshEntryStats() {
+  if (!auth.isLoggedIn) {
+    streakDays.value = 0
+    isCurator.value = false
+    return
+  }
+  try {
+    const summary = await streakApi.summary()
+    streakDays.value = summary?.currentStreak || 0
+  } catch {
+    streakDays.value = 0
+  }
+  try {
+    const me = await curatorApi.me()
+    isCurator.value = !!me?.isCurator
+  } catch {
+    isCurator.value = false
+  }
+}
 
 async function refreshUnread() {
   if (!auth.isLoggedIn) {
@@ -138,7 +180,10 @@ function onNotificationsRead() {
   refreshUnread()
 }
 
-watch(() => auth.isLoggedIn, startPolling, { immediate: true })
+watch(() => auth.isLoggedIn, () => {
+  startPolling()
+  refreshEntryStats()
+}, { immediate: true })
 window.addEventListener('notifications:read', onNotificationsRead)
 onUnmounted(() => {
   stopPolling()
@@ -272,6 +317,18 @@ async function onCommand(command) {
 }
 .nav-item.active::after {
   width: 1.6em;
+}
+.nav-streak {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 5px;
+  font-size: 10.5px;
+  letter-spacing: 0;
+  line-height: 15px;
+  color: #fdfbf4;
+  background: var(--cinnabar);
+  border-radius: 8px;
+  transform: translateY(-1px);
 }
 
 /* ---------- 右侧用户区 ---------- */

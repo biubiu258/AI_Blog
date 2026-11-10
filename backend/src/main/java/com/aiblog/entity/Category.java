@@ -16,6 +16,9 @@ public class Category {
 
     private String name;
 
+    /** 分类编码，如 tech；用于技术板块按编码聚合 */
+    private String code;
+
     private String description;
 
     private LocalDateTime createdAt;

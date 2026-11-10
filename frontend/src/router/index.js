@@ -13,6 +13,12 @@ const routes = [
         component: () => import('../views/ArticleDetailView.vue')
       },
       {
+        // 创作溯源页：公开访问，draft/私享文章由后端返回 404
+        path: 'article/:id/source',
+        name: 'article-source',
+        component: () => import('../views/ArticleSourceView.vue')
+      },
+      {
         path: 'user/:id',
         name: 'user-profile',
         component: () => import('../views/UserProfileView.vue')
@@ -63,6 +69,41 @@ const routes = [
         name: 'profile',
         component: () => import('../views/ProfileView.vue'),
         meta: { requiresAuth: true }
+      },
+      {
+        path: 'series',
+        name: 'series-list',
+        component: () => import('../views/SeriesListView.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
+        // 连载详情公开，未登录用户可浏览目录
+        path: 'series/:id',
+        name: 'series-detail',
+        component: () => import('../views/SeriesDetailView.vue')
+      },
+      {
+        path: 'streak',
+        name: 'streak',
+        component: () => import('../views/StreakView.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
+        path: 'curator',
+        name: 'curator',
+        component: () => import('../views/CuratorView.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
+        // 技术板块公开访问
+        path: 'tech',
+        name: 'tech-list',
+        component: () => import('../views/TechListView.vue')
+      },
+      {
+        path: 'tech/glossary',
+        name: 'tech-glossary',
+        component: () => import('../views/GlossaryView.vue')
       },
       {
         path: 'admin',

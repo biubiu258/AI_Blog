@@ -6,7 +6,8 @@ from app.prompts.registry import PROMPT_VERSION, get_spec
 
 EXPECTED_TASKS = {
     "outline", "draft", "draft_section", "continue", "expand", "condense",
-    "rewrite", "polish", "prose", "suggest", "review", "care",
+    "rewrite", "polish", "prose", "suggest", "review", "care", "style_profile",
+    "self_insight", "tech_wording",
 }
 
 
@@ -21,7 +22,7 @@ def test_every_skill_has_valid_manifest():
         path for path in SKILLS_DIR.iterdir()
         if path.is_dir() and not path.name.startswith("_")
     ]
-    assert len(skills) == 13
+    assert len(skills) == 18
     for skill in skills:
         meta = load_frontmatter(f"{skill.name}/SKILL.md")
         assert meta["name"] == skill.name
@@ -34,7 +35,10 @@ def test_every_skill_has_valid_manifest():
     ("continue", None), ("expand", None), ("condense", None),
     ("rewrite", None), ("polish", None),
     ("prose", "luxun"), ("prose", "plain"),
+    ("prose", "梁实秋"), ("prose", "汪曾祺"),
     ("suggest", None), ("review", None), ("care", None),
+    ("style_profile", None), ("self_insight", None),
+    ("tech_wording", None),
 ])
 def test_spec_files_exist(task, style):
     spec = get_spec(task, style)

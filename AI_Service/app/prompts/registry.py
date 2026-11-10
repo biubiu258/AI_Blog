@@ -74,11 +74,30 @@ def is_luxun_style(style: str | None) -> bool:
     return (style or "luxun").strip().lower() in LUXUN_STYLES
 
 
+# 公版作家风格矩阵：variants 键 → 命中关键词（全部为已故公版作家）
+WRITER_STYLE_VARIANTS: dict[str, set[str]] = {
+    "luxun": LUXUN_STYLES,
+    "liangshiqiu": {"liangshiqiu", "liang-shiqiu", "梁实秋", "梁实秋风格"},
+    "wangzengqi": {"wangzengqi", "wang-zengqi", "汪曾祺", "汪曾祺风格"},
+}
+
+
+def writer_variant_key(style: str | None) -> str:
+    """把 style 参数映射到 manifest prose.variants 的键；未命中回落 plain。"""
+    value = (style or "").strip().lower()
+    for key, names in WRITER_STYLE_VARIANTS.items():
+        if value in names:
+            return key
+    return "plain"
+
+
 def get_spec(task: str, style: str | None = None) -> PromptSpec:
     entry = _MANIFEST["tasks"].get(task)
     if entry is None:
         raise KeyError(f"未知任务: {task}")
     if "variants" in entry:
-        key = "luxun" if is_luxun_style(style) else "plain"
+        key = writer_variant_key(style)
+        if key not in entry["variants"]:
+            key = "plain"
         entry = entry["variants"][key]
     return _to_spec(task, entry)

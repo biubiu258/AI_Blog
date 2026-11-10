@@ -24,6 +24,40 @@ _PLACEHOLDERS = load_yaml("_fragments/placeholders.yaml")
 _SUGGEST_MODES = load_yaml("_fragments/suggest-modes.yaml")
 _PROSE_NOTES = load_yaml("_fragments/prose-notes.yaml")
 
+# 个人文风卡的特征键与中文标题；value 为空的特征不展示
+_STYLE_FEATURE_LABELS = (
+    ("tone", "语调"),
+    ("diction", "用词"),
+    ("sentence", "句式节奏"),
+    ("imagery", "意象"),
+    ("themes", "主题"),
+    ("structure", "篇章"),
+    ("avoid", "避免"),
+)
+
+
+def build_user_style_card(profile: dict | None) -> str:
+    """把个人文风档案渲染成注入系统提示的风格卡；无档案时返回空串。
+
+    卡片由 renderer 统一追加到 system 消息，对所有生成任务生效。
+    """
+    if not isinstance(profile, dict):
+        return ""
+    name = str(profile.get("name") or "我的文风").strip()[:64]
+    summary = str(profile.get("summary") or "").strip()[:200]
+    features = profile.get("features") if isinstance(profile.get("features"), dict) else {}
+
+    lines = [f"【个人文风卡 · {name}】模仿以下风格特征写作，但不逐字复制原文："]
+    if summary:
+        lines.append(f"- 整体：{summary}")
+    for key, label in _STYLE_FEATURE_LABELS:
+        value = str(features.get(key) or "").strip()
+        if value:
+            lines.append(f"- {label}：{value}")
+    if len(lines) <= 1:
+        return ""
+    return "\n".join(lines)
+
 
 @dataclass
 class Step:
@@ -58,6 +92,7 @@ def _base_vars(req: GenerateRequest) -> dict:
         "recent_state": (p.recent_state or "").strip(),
         "instruction": (c.instruction or "").strip(),
         "preferences": json.dumps(prefs, ensure_ascii=False) if prefs else "",
+        "user_style_card": build_user_style_card(req.user_context.style_profile),
         "outline": c.outline or "",
         "material_text": "",
         "context_note": "",

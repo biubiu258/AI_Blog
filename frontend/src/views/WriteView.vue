@@ -50,6 +50,26 @@
             <el-input v-model="form.summary" placeholder="摘要（可选，不填则发布时由正文提取）"
                       maxlength="500" />
           </div>
+          <div v-if="seriesOptions.length" class="meta-row series-row">
+            <span class="disclosure-label">加入连载</span>
+            <el-select v-model="selectedSeriesId" clearable placeholder="不加入连载"
+                       style="width: 260px">
+              <el-option v-for="s in seriesOptions" :key="s.id"
+                         :label="s.title" :value="s.id" />
+            </el-select>
+            <span class="disclosure-hint">保存成功后自动加入所选连载</span>
+          </div>
+          <div class="meta-row disclosure-row">
+            <span class="disclosure-label">AI 参与声明</span>
+            <el-radio-group v-model="form.aiUsageLevel" size="small">
+              <el-radio-button value="none">未使用 AI</el-radio-button>
+              <el-radio-button value="assisted">AI 辅助</el-radio-button>
+              <el-radio-button value="generated">主要生成</el-radio-button>
+            </el-radio-group>
+            <el-button v-if="articleId" link size="small" :loading="suggestLoading"
+                       @click="loadSuggestion">按 AI 记录推荐</el-button>
+            <span class="disclosure-hint">发布前必填 · 将按《标识办法》对外展示标识</span>
+          </div>
           <Toolbar class="editor-toolbar" :editor="editorRef" :defaultConfig="toolbarConfig"
                    mode="default" />
           <Editor class="editor-content" v-model="form.contentHtml" :defaultConfig="editorConfig"
@@ -70,6 +90,14 @@
             </div>
           </template>
 
+          <!-- 写作陪伴提示：安静展示，不打断写作 -->
+          <div v-if="companion" class="companion-card">
+            <span class="companion-text">{{ companion.message }}</span>
+            <el-tag size="small" :type="companionToneType" effect="plain" class="companion-tone">
+              {{ companionToneText }}
+            </el-tag>
+          </div>
+
           <el-tabs v-model="aiTab" class="ai-tabs">
             <el-tab-pane label="生成" name="generate">
               <el-form label-position="top" class="ai-form" label-width="auto">
@@ -77,6 +105,17 @@
                   <el-select v-model="ai.task" @change="onTaskChange">
                     <el-option v-for="t in taskOptions" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
+                </el-form-item>
+
+                <el-form-item label="文风库">
+                  <div class="style-row">
+                    <el-select v-model="selectedStyleProfileId" clearable placeholder="不使用文风库"
+                               class="style-select">
+                      <el-option v-for="p in readyStyleProfiles" :key="p.id"
+                                 :label="p.isDefault ? `${p.name}（默认）` : p.name" :value="p.id" />
+                    </el-select>
+                    <el-button link type="primary" @click="openStyleDialog">管理文风库</el-button>
+                  </div>
                 </el-form-item>
 
                 <el-form-item v-if="needsTopic" label="主题（必填）">
@@ -191,6 +230,21 @@
                                    @ignore="ignoreSuggestion" />
               </div>
             </el-tab-pane>
+
+            <el-tab-pane name="wording">
+              <template #label>
+                <span>术语与措辞</span>
+                <span v-if="wordingIssues.length" class="tab-dot" />
+              </template>
+              <div class="review-pane">
+                <TechWordingPanel :issues="wordingIssues" :loading="wordingLoading"
+                                   :degraded="wordingDegraded" :message="wordingMessage"
+                                   :has-selection="!!wordingTarget" :selected-text="wordingTarget"
+                                   :checked="wordingChecked"
+                                   @check="checkWording" @locate="locateWordingIssue"
+                                   @apply="applyWordingIssue" @ignore="ignoreWordingIssue" />
+              </div>
+            </el-tab-pane>
           </el-tabs>
         </el-card>
       </el-col>
@@ -212,6 +266,52 @@
 
     <AiSelectionMenu :visible="selectionMenu.visible" :x="selectionMenu.x" :y="selectionMenu.y"
                      :loading="selectionLoading" @ask="askSelection" />
+
+    <!-- 文风库管理 -->
+    <el-dialog v-model="styleDialog.visible" title="管理文风库" width="560px">
+      <div v-loading="styleDialog.loading" class="style-manage">
+        <div v-if="!styleProfiles.length" class="hint">
+          还没有文风档，从你的历史文章提炼一个吧（3–10 篇）
+        </div>
+        <div v-for="p in styleProfiles" :key="p.id" class="style-item">
+          <div class="style-item-main">
+            <div class="style-item-name">
+              <span>{{ p.name }}</span>
+              <el-tag v-if="p.isDefault" size="small" type="success" effect="plain">默认</el-tag>
+              <el-tag v-if="p.status === 'failed'" size="small" type="danger" effect="plain">提炼失败</el-tag>
+              <el-tag v-else-if="p.status === 'building'" size="small" type="warning" effect="plain">
+                提炼中
+              </el-tag>
+            </div>
+            <div class="style-item-sub">
+              样本 {{ p.sampleCount }} 篇 · {{ formatDate(p.createdAt) }}
+              <span v-if="p.status === 'failed'"> · 提炼未成功，可删除后重试</span>
+            </div>
+          </div>
+          <div class="style-item-actions">
+            <el-button v-if="!p.isDefault && p.status === 'ready'" link type="primary"
+                       @click="setDefaultStyle(p)">设为默认</el-button>
+            <el-button link type="danger" @click="removeStyle(p)">删除</el-button>
+          </div>
+        </div>
+
+        <el-divider content-position="left">从我的文章提炼新文风</el-divider>
+        <el-form label-position="top">
+          <el-form-item label="文风名称">
+            <el-input v-model="styleForm.name" maxlength="64" placeholder="如：我的散文体" />
+          </el-form-item>
+          <el-form-item label="选择文章（3–10 篇）">
+            <el-select v-model="styleForm.articleIds" multiple filterable style="width: 100%"
+                       placeholder="从自己的历史文章中选择">
+              <el-option v-for="a in myArticles" :key="a.id" :label="a.title" :value="a.id" />
+            </el-select>
+          </el-form-item>
+          <el-button type="primary" :loading="styleForm.saving" @click="createStyleProfile">
+            开始提炼
+          </el-button>
+        </el-form>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -223,11 +323,12 @@ import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 import '@wangeditor/editor/dist/css/style.css'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { articleApi, categoryApi, tagApi } from '../api'
+import { articleApi, categoryApi, companionApi, seriesApi, styleProfileApi, tagApi, techApi } from '../api'
 import request from '../api/request'
 import { aiAdopt, aiGenerate, aiReview } from '../api/ai'
 import AiSelectionMenu from '../components/AiSelectionMenu.vue'
 import AiSuggestionPanel from '../components/AiSuggestionPanel.vue'
+import TechWordingPanel from '../components/TechWordingPanel.vue'
 import {
   getPlainText,
   getSelectionInfo,
@@ -248,6 +349,7 @@ const articleId = ref(null)
 const categories = ref([])
 const tagOptions = ref([])
 const saving = ref(false)
+const suggestLoading = ref(false)
 const scheduleOpen = ref(false)
 const form = reactive({
   title: '',
@@ -255,8 +357,23 @@ const form = reactive({
   summary: '',
   contentHtml: '',
   tags: [],
-  scheduledAt: null
+  scheduledAt: null,
+  aiUsageLevel: null
 })
+
+// ---------- 加入连载 ----------
+const seriesOptions = ref([])
+const selectedSeriesId = ref(null)
+let originalSeriesId = null
+
+async function loadSeriesOptions() {
+  if (!auth.isLoggedIn) return
+  try {
+    seriesOptions.value = (await seriesApi.mine()) || []
+  } catch {
+    seriesOptions.value = []
+  }
+}
 
 // ---------- 版本历史 ----------
 const versionDrawer = ref(false)
@@ -405,6 +522,92 @@ const lastResult = ref('')
 const resultBodyRef = ref(null)
 let abortController = null
 
+// ---------- 写作陪伴提示（2.9）：失败静默 ----------
+const companion = ref(null)
+const COMPANION_TONE_TEXT = { gentle: '轻轻的', encourage: '加油', warm: '温暖', steady: '平稳' }
+const COMPANION_TONE_TYPE = { gentle: 'info', encourage: 'warning', warm: 'success', steady: 'primary' }
+const companionToneText = computed(() => COMPANION_TONE_TEXT[companion.value?.tone] || '陪伴')
+const companionToneType = computed(() => COMPANION_TONE_TYPE[companion.value?.tone] || 'info')
+
+async function loadCompanion() {
+  try {
+    companion.value = await companionApi.get()
+  } catch {
+    companion.value = null
+  }
+}
+
+// ---------- 个人文风库 ----------
+const styleProfiles = ref([])
+const selectedStyleProfileId = ref(null)
+const readyStyleProfiles = computed(() => styleProfiles.value.filter((p) => p.status === 'ready'))
+const styleDialog = reactive({ visible: false, loading: false })
+const styleForm = reactive({ name: '', articleIds: [], saving: false })
+const myArticles = ref([])
+
+async function loadStyleProfiles() {
+  try {
+    styleProfiles.value = (await styleProfileApi.list()) || []
+  } catch {
+    styleProfiles.value = []
+  }
+}
+
+async function openStyleDialog() {
+  styleDialog.visible = true
+  styleDialog.loading = true
+  try {
+    if (!myArticles.value.length) {
+      const data = await articleApi.mine({ page: 1, size: 50 })
+      myArticles.value = data.items || []
+    }
+  } catch {
+    myArticles.value = []
+  } finally {
+    styleDialog.loading = false
+  }
+  loadStyleProfiles()
+}
+
+async function createStyleProfile() {
+  if (!styleForm.name.trim()) {
+    ElMessage.warning('请填写文风名称')
+    return
+  }
+  if (styleForm.articleIds.length < 3 || styleForm.articleIds.length > 10) {
+    ElMessage.warning('请选择 3–10 篇自己的文章')
+    return
+  }
+  styleForm.saving = true
+  try {
+    const created = await styleProfileApi.create({
+      name: styleForm.name.trim(),
+      articleIds: styleForm.articleIds
+    })
+    styleForm.name = ''
+    styleForm.articleIds = []
+    await loadStyleProfiles()
+    if (created?.status === 'failed') ElMessage.warning('文风提炼失败，可删除后重试')
+    else ElMessage.success('文风档已创建，提炼完成后即可选用')
+  } finally {
+    styleForm.saving = false
+  }
+}
+
+async function setDefaultStyle(profile) {
+  await styleProfileApi.setDefault(profile.id)
+  ElMessage.success(`已将「${profile.name}」设为默认文风`)
+  loadStyleProfiles()
+}
+
+async function removeStyle(profile) {
+  await ElMessageBox.confirm(`确定删除文风档「${profile.name}」吗？`, '提示', { type: 'warning' })
+  await styleProfileApi.remove(profile.id)
+  if (selectedStyleProfileId.value === profile.id) selectedStyleProfileId.value = null
+  ElMessage.success('已删除')
+  loadStyleProfiles()
+}
+
 // ---------- 划词问 AI ----------
 const aiTab = ref('generate')
 const selectionMenu = reactive({ visible: false, x: 0, y: 0 })
@@ -457,6 +660,10 @@ function updateSelectionMenu() {
     selectionMenu.visible = false
     return
   }
+  // 记录最近一次有效选区，供「术语与措辞」面板检查使用
+  if (info.selectedText.length <= 1500) {
+    wordingTarget.value = info.selectedText.trim()
+  }
   const rect = currentSelectionRect()
   if (!rect) {
     selectionMenu.visible = false
@@ -493,7 +700,8 @@ async function askSelection(mode) {
       articleId: articleId.value || undefined,
       params: {
         suggestionMode: mode,
-        topic: form.title || undefined
+        topic: form.title || undefined,
+        styleProfileId: selectedStyleProfileId.value || undefined
       },
       context: {
         selectedText: info.selectedText,
@@ -681,6 +889,98 @@ function ignoreSuggestion(index) {
   refreshReviewHighlights()
 }
 
+// ---------- 术语与措辞 ----------
+const wordingTarget = ref('')
+const wordingIssues = ref([])
+const wordingLoading = ref(false)
+const wordingDegraded = ref(false)
+const wordingMessage = ref('')
+const wordingChecked = ref(false)
+
+async function checkWording() {
+  const editor = editorRef.value
+  if (!editor || wordingLoading.value) return
+  const info = getSelectionInfo(editor)
+  const text = (info?.selectedText || wordingTarget.value || '').trim()
+  if (!text) {
+    ElMessage.warning('请先在正文中选中一段文字')
+    return
+  }
+  if (text.length < 20) {
+    ElMessage.warning('选中内容少于 20 字，请选中完整段落')
+    return
+  }
+  if (text.length > 1500) {
+    ElMessage.warning('选中内容超过 1500 字，请缩短后再检查')
+    return
+  }
+  wordingTarget.value = text
+  wordingLoading.value = true
+  wordingChecked.value = true
+  aiTab.value = 'wording'
+  try {
+    const data = await techApi.wording({
+      articleId: articleId.value || undefined,
+      sectionPath: form.title || undefined,
+      text
+    })
+    wordingIssues.value = data.issues || []
+    wordingDegraded.value = !!data.degraded
+    wordingMessage.value = data.message || ''
+    if (!wordingIssues.value.length && !wordingDegraded.value) {
+      ElMessage.info('未发现需要调整的表述')
+    }
+  } catch {
+    wordingIssues.value = []
+    wordingDegraded.value = true
+    wordingMessage.value = 'AI 服务暂时不可用，可稍后重试'
+  } finally {
+    wordingLoading.value = false
+  }
+}
+
+function locateWordingIssue(index) {
+  const editor = editorRef.value
+  const item = wordingIssues.value[index]
+  if (!editor || !item) return
+  const located = locateQuote(getPlainText(editor), item.quote)
+  if (!located) {
+    ElMessage.warning('原文已修改，本条无法定位')
+    return
+  }
+  const range = rangeFromOffsets(editor, located.start, located.end)
+  if (!range) return
+  suppressSelectionMenu = true
+  editor.select(range)
+  editor.restoreSelection?.()
+  editor.getEditableContainer?.()?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  window.setTimeout(() => {
+    suppressSelectionMenu = false
+  }, 400)
+}
+
+function applyWordingIssue(index) {
+  const editor = editorRef.value
+  const item = wordingIssues.value[index]
+  if (!editor || !item?.replacement) return
+  const located = locateQuote(getPlainText(editor), item.quote)
+  if (!located) {
+    ElMessage.warning('原文已修改，请重新检查')
+    return
+  }
+  if (!replaceOffsets(editor, located.start, located.end, item.replacement)) {
+    ElMessage.error('替换失败，请重试')
+    return
+  }
+  ElMessage.success('已替换，可用 Ctrl+Z 撤销')
+  aiAdopt('tech_assist')
+  wordingIssues.value.splice(index, 1)
+}
+
+function ignoreWordingIssue(index) {
+  wordingIssues.value.splice(index, 1)
+}
+
 const needsTopic = computed(() => ai.task === 'outline')
 const needsOriginalText = computed(() =>
   ['continue', 'expand', 'condense', 'rewrite', 'polish'].includes(ai.task))
@@ -707,7 +1007,8 @@ function buildPayload() {
       topic: ai.topic || undefined,
       articleType: ai.articleType || undefined,
       style: ai.style || undefined,
-      targetReader: ai.targetReader || undefined
+      targetReader: ai.targetReader || undefined,
+      styleProfileId: selectedStyleProfileId.value || undefined
     },
     context: {
       outline: ai.outline || '',
@@ -838,6 +1139,7 @@ function persistSnapshot() {
       contentHtml: form.contentHtml,
       tags: form.tags,
       scheduledAt: form.scheduledAt,
+      aiUsageLevel: form.aiUsageLevel,
       savedAt: Date.now()
     }))
     autosaveAt.value = new Date()
@@ -892,6 +1194,7 @@ async function maybeRestoreSnapshot(serverUpdatedAt) {
   form.contentHtml = snap.contentHtml || ''
   form.tags = snap.tags || []
   form.scheduledAt = snap.scheduledAt || null
+  form.aiUsageLevel = snap.aiUsageLevel || null
   editorRef.value?.setHtml(snap.contentHtml || '')
   autosaveAt.value = new Date(snap.savedAt)
   ElMessage.success('已恢复本地草稿')
@@ -914,7 +1217,7 @@ function onBeforeUnload(event) {
 }
 
 watch(() => [form.title, form.categoryId, form.summary, form.contentHtml,
-  form.tags, form.scheduledAt], scheduleAutosave, { deep: true })
+  form.tags, form.scheduledAt, form.aiUsageLevel], scheduleAutosave, { deep: true })
 
 // ---------- 保存 ----------
 async function save(status) {
@@ -926,6 +1229,10 @@ async function save(status) {
     ElMessage.warning('请先选择定时发布时间')
     return
   }
+  if ((status === 'published' || status === 'scheduled') && !form.aiUsageLevel) {
+    ElMessage.warning('发布前请选择 AI 参与声明（未使用 / 辅助 / 主要生成）')
+    return
+  }
   saving.value = true
   try {
     const payload = {
@@ -935,13 +1242,23 @@ async function save(status) {
       summary: form.summary || undefined,
       status,
       tags: form.tags,
-      scheduledAt: status === 'scheduled' ? form.scheduledAt : undefined
+      scheduledAt: status === 'scheduled' ? form.scheduledAt : undefined,
+      aiUsageLevel: form.aiUsageLevel || undefined
     }
     let data
     if (articleId.value) {
       data = await articleApi.update(articleId.value, payload)
     } else {
       data = await articleApi.create(payload)
+    }
+    // 保存成功后按选择加入连载（编辑时仅在连载选择发生变化时提交）
+    if (selectedSeriesId.value && selectedSeriesId.value !== originalSeriesId && data?.id) {
+      try {
+        await seriesApi.addArticle(selectedSeriesId.value, { articleId: data.id })
+        originalSeriesId = selectedSeriesId.value
+      } catch {
+        /* 加入失败不影响文章保存，拦截器已提示 */
+      }
     }
     afterPublish(status, data)
   } finally {
@@ -952,6 +1269,25 @@ async function save(status) {
 function confirmSchedule() {
   scheduleOpen.value = false
   save('scheduled')
+}
+
+/** 按该文章的 AI 调用审计记录推荐声明等级 */
+async function loadSuggestion() {
+  if (!articleId.value) return
+  suggestLoading.value = true
+  try {
+    const data = await articleApi.aiDisclosureSuggest(articleId.value)
+    form.aiUsageLevel = data.suggestedLevel
+    const count = Number(data.aiCallCount || 0)
+    const label = { none: '未使用 AI', assisted: 'AI 辅助', generated: '主要生成' }
+    ElMessage.info(count === 0
+      ? '该文章暂无 AI 调用记录，建议选择「未使用 AI」'
+      : `检测到 ${count} 次 AI 调用（采纳 ${data.adoptedCount} 次），建议选择「${label[data.suggestedLevel] || data.suggestedLevel}」`)
+  } catch (err) {
+    ElMessage.error(err?.message || '推荐获取失败，请手动选择')
+  } finally {
+    suggestLoading.value = false
+  }
 }
 
 /** 发布响应关怀分支（契约 5.8）：high → 危机页（文章已私密发布）；low/mid → 信笺/短笺 */
@@ -973,6 +1309,8 @@ function afterPublish(status, data) {
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('beforeunload', onBeforeUnload)
+  loadCompanion()
+  loadStyleProfiles()
   try {
     categories.value = await categoryApi.list()
   } catch {
@@ -983,6 +1321,7 @@ onMounted(async () => {
   } catch {
     tagOptions.value = []
   }
+  loadSeriesOptions()
   let serverUpdatedAt = null
   if (route.params.id) {
     articleId.value = route.params.id
@@ -998,6 +1337,9 @@ onMounted(async () => {
     form.contentHtml = detail.contentHtml || ''
     form.tags = detail.tags || []
     form.scheduledAt = detail.scheduledAt || null
+    form.aiUsageLevel = detail.aiUsageLevel || null
+    originalSeriesId = detail.series?.id ?? null
+    selectedSeriesId.value = originalSeriesId
     serverUpdatedAt = detail.updatedAt
   }
   await maybeRestoreSnapshot(serverUpdatedAt)
@@ -1110,6 +1452,24 @@ onMounted(async () => {
   margin-bottom: 14px;
 }
 
+.disclosure-row,
+.series-row {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.disclosure-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #2c2a26);
+}
+
+.disclosure-hint {
+  font-size: 12px;
+  color: var(--muted, #8a8578);
+}
+
 /* ---------- 富文本编辑器：高度跟随视口 ---------- */
 .editor-toolbar {
   border: 1px solid var(--hairline-dark);
@@ -1171,6 +1531,71 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   letter-spacing: 0.08em;
+}
+
+/* 写作陪伴提示卡 */
+.companion-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid #4a8c5c;
+  border-radius: 3px;
+  background: rgba(74, 140, 92, 0.05);
+}
+.companion-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+}
+.companion-tone {
+  flex-shrink: 0;
+}
+
+/* 文风库 */
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.style-select {
+  flex: 1;
+}
+.style-manage {
+  min-height: 120px;
+}
+.style-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--hairline);
+}
+.style-item-main {
+  min-width: 0;
+}
+.style-item-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.style-item-sub {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+.style-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 .ai-actions {
   display: flex;

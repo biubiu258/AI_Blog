@@ -23,6 +23,12 @@ log = logging.getLogger("ai-service.review")
 MIN_QUOTE_LEN = 6
 _QUOTE_STRIP_CHARS = " \t\r\n\"'“”‘’「」『』"
 
+# type 白名单：与 article-reviewer system.md 的取值范围一致；越界值回落 expression
+REVIEW_TYPES = {
+    "typo", "grammar", "cliche", "redundancy", "expression",
+    "structure", "repetition", "opening", "ending", "logic",
+}
+
 
 def _build_messages(req: ReviewRequest, spec) -> list[dict]:
     variables = {
@@ -136,7 +142,9 @@ def _parse_suggestions(text: str, content: str) -> list[ReviewSuggestion]:
         if severity not in ("low", "mid", "high"):
             severity = "mid"
 
-        suggestion_type = _as_text(item.get("type"))[:24] or "expression"
+        suggestion_type = _as_text(item.get("type"))[:24]
+        if suggestion_type not in REVIEW_TYPES:
+            suggestion_type = "expression"
         suggestions.append(ReviewSuggestion(
             type=suggestion_type,
             severity=severity,

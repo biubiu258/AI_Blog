@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class ArticleDetailResponse {
@@ -28,6 +29,15 @@ public class ArticleDetailResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    /** AI 参与程度：none / assisted / generated */
+    private String aiUsageLevel;
+    /** 作者主动声明时间 */
+    private LocalDateTime aiDeclaredAt;
+    /** 平台内容编号，用于显式标识展示 */
+    private String aiContentId;
+    /** 人类创作徽章（迭代 2 启用） */
+    private Integer humanBadge;
+
     /** 互动计数与当前用户状态 */
     private Long likeCount;
     private Long favoriteCount;
@@ -36,6 +46,9 @@ public class ArticleDetailResponse {
     private Boolean liked;
     private Boolean favorited;
     private Boolean following;
+
+    /** 所属连载上下文（目录序号与上下篇），未加入连载时为 null */
+    private Map<String, Object> series;
 
     public static ArticleDetailResponse of(Article article, String categoryName, User author,
                                            List<String> tags) {
@@ -54,6 +67,10 @@ public class ArticleDetailResponse {
         r.setScheduledAt(article.getScheduledAt());
         r.setCreatedAt(article.getCreatedAt());
         r.setUpdatedAt(article.getUpdatedAt());
+        r.setAiUsageLevel(article.getAiUsageLevel() == null ? "none" : article.getAiUsageLevel());
+        r.setAiDeclaredAt(article.getAiDeclaredAt());
+        r.setAiContentId("AIB-ARTICLE-" + article.getId());
+        r.setHumanBadge(article.getHumanBadge() == null ? 0 : article.getHumanBadge());
         if (author != null) {
             r.setAuthorNickname(author.getNickname());
             r.setAuthorAvatar(author.getAvatarUrl());

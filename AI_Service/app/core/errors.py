@@ -12,6 +12,10 @@ CODE_STATUS: dict[str, int] = {
     "LLM_TIMEOUT": 504,
     "LLM_ERROR": 502,
     "VECTOR_ERROR": 500,
+    "FILE_TOO_LARGE": 413,
+    "FILE_TYPE_UNSUPPORTED": 415,
+    "PDF_ENCRYPTED": 422,
+    "PDF_NO_TEXT": 422,
     "INTERNAL_ERROR": 500,
 }
 

@@ -13,7 +13,7 @@ public class Notification {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long userId;
-    /** comment / reply / like / favorite / follow / system */
+    /** comment / reply / like / favorite / follow / system / streak / series */
     private String type;
     private Long actorId;
     private Long articleId;

@@ -19,6 +19,7 @@ description: "Reviews article text and returns up to six anchored JSON suggestio
 ## 输出契约
 - 只输出 JSON：`{"suggestions":[...]}`，最多 6 条
 - 每条包含 type、severity、quote、reason、replacement
+- type 含四类专项语言检查：typo（错别字）/ grammar（病句）/ cliche（陈词滥调）/ redundancy（冗余表达），优先扫描
 - quote 必须逐字复制正文、6–120 字、单段且全文唯一
 - 无建议时输出 `{"suggestions": []}`
 
